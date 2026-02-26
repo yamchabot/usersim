@@ -11,10 +11,7 @@ data-processor/
 └── usersim/            ← all simulation files in one place
     ├── instrumentation.py
     ├── perceptions.py
-    └── users/
-        ├── developer.py
-        ├── analyst.py
-        └── ops_engineer.py
+    └── users.py        ← all three personas in one file
 ```
 
 ## What's here
@@ -24,9 +21,7 @@ data-processor/
 | `processor.py` | The application — sort, search, summarise records |
 | `usersim/instrumentation.py` | Runs the processor and records real wall-clock timing |
 | `usersim/perceptions.py` | Translates timing into numeric domain observations |
-| `usersim/users/developer.py` | Interactive use; needs operations to feel responsive |
-| `usersim/users/analyst.py` | Ad-hoc queries; tolerates latency, needs correctness |
-| `usersim/users/ops_engineer.py` | Batch jobs; needs pipeline to finish within SLA |
+| `usersim/users.py` | All personas: Developer, Analyst, OpsEngineer |
 | `usersim.yaml` | Pipeline config — scenarios, commands, output paths |
 
 ## Run it

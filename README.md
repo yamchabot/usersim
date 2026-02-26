@@ -86,9 +86,11 @@ instrumentation: "node instrumentation.js"
 # Reads metrics JSON from stdin, writes perceptions JSON to stdout.
 perceptions: "python3 perceptions.py"
 
-# User persona files. Glob patterns supported.
+# User persona files — a single file or a glob over a directory.
+# All Person subclasses found are loaded automatically.
 users:
-  - users/*.py
+  - users.py          # single file (good for a handful of personas)
+  # - users/*.py      # one file per persona (better for many)
 
 # Run the pipeline once per scenario.
 scenarios:

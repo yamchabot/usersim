@@ -11,7 +11,7 @@ instrumentation: "python3 usersim/instrumentation.py"
 perceptions: "python3 usersim/perceptions.py"
 
 users:
-  - usersim/users/*.py
+  - usersim/users.py
 
 scenarios:
   - small    # 500 records  — should feel instant

@@ -143,7 +143,11 @@ This means the file works two ways:
 Each user applies their own thresholds to the numeric perceptions.
 Plain comparison operators work — no special Z3 imports needed for simple cases.
 
-Create `users/power_user.py`:
+You can define personas as separate files in a `users/` directory **or** put them
+all in a single `users.py` file — whichever suits your project.  The config accepts
+either a glob (`users/*.py`) or a single path (`users.py`).
+
+Create `users/power_user.py` (or add a `PowerUser` class to `users.py`):
 
 ```python
 from usersim import Person
