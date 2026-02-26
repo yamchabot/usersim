@@ -6,25 +6,41 @@ from pathlib import Path
 
 _PERCEPTIONS_PY = '''\
 """
-perceptions.py — translate raw metrics into human-meaningful boolean facts.
+perceptions.py — extract domain-meaningful observations from raw metrics.
 
-Receives metrics from usersim and returns a dict of facts that user
-constraint files reason about.  Edit to match what matters in your app.
+A domain expert looks at the instrumentation output and decides what matters.
+Return numeric values wherever possible — different users will apply their
+own thresholds in their constraint files.  Boolean perceptions are fine for
+categorical facts (job completed, feature enabled) but avoid using them to
+encode performance judgements that different users would disagree on.
+
+usersim calls compute() in-process when running the pipeline.
+The __main__ block at the bottom lets you also run this file directly:
+
+    python3 perceptions.py < metrics.json    # manual testing
+    cat metrics.json | python3 perceptions.py | python3 -m json.tool
 """
-from usersim.perceptions.library import threshold, flag, in_range
+from usersim.perceptions.library import run_perceptions
 
 
-def compute(metrics: dict, scenario: str = "default", **kwargs) -> dict:
+def compute(metrics: dict, **_) -> dict:
     """
-    Return a dict of {fact_name: bool | float}.
-    Each fact becomes an attribute on P in your user constraint files.
+    Return a dict of {fact_name: bool | float | int}.
+    Each key becomes an attribute on P in your user constraint files.
     """
     return {
-        # ── Replace these with facts relevant to your application ───────────
-        "is_fast":       threshold(metrics, "response_time_ms", max=300),
-        "has_no_errors": metrics.get("error_count", 0) == 0,
-        "is_available":  flag(metrics, "service_up", default=True),
+        # ── Replace these with observations relevant to your application ────
+        # Numeric — users apply their own thresholds
+        "response_time_ms": metrics.get("response_time_ms", 0.0),
+        "error_rate":       metrics.get("error_count", 0) / max(metrics.get("total_requests", 1), 1),
+
+        # Boolean — only for definitionally true/false facts
+        "service_available": bool(metrics.get("service_up", True)),
     }
+
+
+if __name__ == "__main__":
+    run_perceptions(compute)
 '''
 
 _USER_PY = '''\

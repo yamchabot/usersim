@@ -4,7 +4,7 @@ perceptions.py — what can a domain expert observe about this processor?
 Returns numeric values wherever possible.  Thresholds ("is this fast enough?")
 belong in user constraint files — different users have different tolerances.
 """
-from usersim.perceptions.library import throughput
+from usersim.perceptions.library import throughput, run_perceptions
 
 
 def compute(metrics: dict, **_) -> dict:
@@ -29,3 +29,7 @@ def compute(metrics: dict, **_) -> dict:
         # This is categorical — the search either returned results or it didn't.
         "search_returned_results": metrics.get("search_hits", 0) > 0,
     }
+
+
+if __name__ == "__main__":
+    run_perceptions(compute)

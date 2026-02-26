@@ -107,6 +107,8 @@ ratios. Thresholds ("is 400ms fast enough?") differ per user and belong in step 
 Replace `perceptions.py`:
 
 ```python
+from usersim.perceptions.library import run_perceptions
+
 def compute(metrics: dict, **_) -> dict:
     return {
         # Raw timing — pass through; each user decides what's "too slow"
@@ -118,9 +120,17 @@ def compute(metrics: dict, **_) -> dict:
         "uptime_pct":  metrics.get("uptime_pct", 100.0),
         "cache_hit":   metrics.get("cache_hit", 0.0),
     }
+
+if __name__ == "__main__":
+    run_perceptions(compute)
 ```
 
-usersim detects `compute()` and calls it in-process — no subprocess needed.
+`run_perceptions(compute)` handles the stdin → stdout boilerplate: reads metrics
+JSON from stdin, calls `compute()`, writes the perceptions JSON to stdout.
+
+This means the file works two ways:
+- **`usersim run`** calls `compute()` in-process (no subprocess overhead)
+- **Direct invocation** also works: `python3 perceptions.py < metrics.json`
 
 > Booleans are fine for *definitional* facts: "did the job complete?", "is the
 > feature enabled?". Avoid booleans for continuous values where users disagree

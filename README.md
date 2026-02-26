@@ -171,7 +171,7 @@ metrics  = measure_for_scenario(scenario)
 A domain expert translates raw metrics into observable quantities. **Mostly numeric** — pass values through, compute rates and ratios. Avoid encoding thresholds here: different users have different tolerances, and those live in user constraint files.
 
 ```python
-from usersim.perceptions.library import rate, throughput
+from usersim.perceptions.library import rate, throughput, run_perceptions
 
 def compute(metrics: dict, **_) -> dict:
     return {
@@ -183,6 +183,9 @@ def compute(metrics: dict, **_) -> dict:
         # Definitional boolean — categorical, not a threshold judgement
         "returned_results": metrics.get("result_count", 0) > 0,
     }
+
+if __name__ == "__main__":
+    run_perceptions(compute)  # reads stdin, writes perceptions JSON to stdout
 ```
 
 ### Users (Layer 3)

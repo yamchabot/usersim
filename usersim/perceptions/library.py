@@ -197,3 +197,51 @@ def in_range(metrics: dict, key: str, lo: float, hi: float, default: bool = Fals
     if val is None:
         return default
     return lo <= val <= hi
+
+
+# ── Standalone runner ──────────────────────────────────────────────────────────
+
+def run_perceptions(compute_fn) -> None:
+    """
+    Run `compute_fn` as a stdin → stdout perceptions script.
+
+    Reads metrics JSON from stdin, calls compute_fn(metrics, scenario=...),
+    and writes the perceptions JSON document to stdout.
+
+    Call this from your perceptions.py __main__ block so the file works
+    both ways: called in-process by `usersim run` (via compute()), and as
+    a standalone script in a shell pipe or for manual testing.
+
+    Example
+    -------
+    def compute(metrics, **_):
+        return { "response_ms": metrics["response_ms"] }
+
+    if __name__ == "__main__":
+        run_perceptions(compute)
+
+    Usage
+    -----
+    python3 perceptions.py < metrics.json          # manual test
+    cat metrics.json | python3 perceptions.py      # shell pipe
+    """
+    import json
+    import sys
+
+    doc      = json.load(sys.stdin)
+    metrics  = doc.get("metrics", {})
+    scenario = doc.get("scenario", "default")
+
+    result = compute_fn(metrics, scenario=scenario)
+
+    # If compute_fn returned just the facts dict, wrap it in the full schema
+    if "facts" not in result:
+        result = {
+            "schema":   "usersim.perceptions.v1",
+            "scenario": scenario,
+            "person":   "all",
+            "facts":    result,
+        }
+
+    json.dump(result, sys.stdout)
+    sys.stdout.write("\n")
