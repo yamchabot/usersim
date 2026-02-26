@@ -26,20 +26,21 @@ usersim reads the config, runs three stages in sequence, and reports which simul
 │  A shell command that collects metrics from your app        │
 │  and writes metrics JSON to stdout.                         │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  { "response_ms": 240, "errors": 0 }
+                        │  { "response_ms": 240, "error_count": 0 }
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 2 — Perceptions         (any language)               │
 │                                                             │
-│  A script that translates numbers into what a human         │
-│  would perceive.  Reads stdin, writes to stdout.            │
+│  A domain expert translates raw metrics into observable     │
+│  quantities.  Mostly numeric — users apply their own        │
+│  thresholds in layer 3.  Reads stdin, writes to stdout.     │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  { "loads_fast": true, "no_errors": true }
+                        │  { "response_ms": 240, "error_rate": 0.0, "result_count": 12 }
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3 — Judgement           (Z3, controlled by usersim)  │
 │                                                             │
-│  Evaluates each persona's logical constraints.              │
+│  Each persona applies their own numeric thresholds.         │
 │  Reports who is satisfied and why.                          │
 └─────────────────────────────────────────────────────────────┘
 ```

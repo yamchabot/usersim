@@ -22,8 +22,8 @@ def compute(metrics: dict, **_) -> dict:
         "record_count": n,
 
         # ── Derived rates ─────────────────────────────────────────────────
-        "error_rate":       errors / n,                       # fraction of records with errors
-        "sort_throughput":  n / max(metrics.get("sort_ms", 1.0), 0.001),  # records per ms
+        "error_rate":      errors / n,                            # fraction of records with errors
+        "sort_throughput": throughput(metrics, "record_count", "sort_ms"),  # records per ms
 
         # ── Definitional boolean: did the search find anything? ───────────
         # This is categorical — the search either returned results or it didn't.
