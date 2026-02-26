@@ -6,7 +6,15 @@ human-meaningful boolean facts about what a user would perceive.
 
 This is the "What does a human see?" layer.
 It knows nothing about users or satisfaction — just physics and geometry.
+
+Can be used two ways:
+  1. Called in-process by `usersim run` via the compute() function (faster)
+  2. Run as a standalone script in a shell pipe:
+       node instrumentation.js | python3 perceptions.py | usersim judge --users users/*.py
 """
+import json
+import sys
+
 from usersim.perceptions.library import threshold, in_range, flag
 
 
@@ -41,3 +49,16 @@ def compute(metrics: dict, scenario: str = "default", person: str = None) -> dic
         "can_follow_chains":    flag(m, "has_linear_chains"),
         "clusters_visible":     threshold(m, "blob_separation",       min=0.40),
     }
+
+
+# Standalone script mode — read metrics JSON from stdin, write perceptions to stdout
+if __name__ == "__main__":
+    doc   = json.load(sys.stdin)
+    facts = compute(doc["metrics"], scenario=doc.get("scenario", "default"))
+    json.dump({
+        "schema":   "usersim.perceptions.v1",
+        "scenario": doc.get("scenario", "default"),
+        "person":   "all",
+        "facts":    facts,
+    }, sys.stdout)
+    sys.stdout.write("\n")

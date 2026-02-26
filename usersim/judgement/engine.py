@@ -1,13 +1,19 @@
 """
 Judgement engine — evaluates perceptions against user constraints using Z3.
 
-Input:  perceptions.json  { facts: {name: bool|float} }
+Input:  perceptions JSON  { facts: {name: bool|float} }
         user files        [Person subclasses]
-Output: results.json      { satisfied: bool, score: float, violations: [...] }
+Output: results JSON      { satisfied: bool, score: float, violations: [...] }
+
+The perceptions input can be supplied as:
+  - a file path (str or Path)
+  - the string "-"  → read from stdin
+  - a dict          → used directly (for in-process pipeline)
 """
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,14 +26,12 @@ if TYPE_CHECKING:
 
 def _make_fact_vars(facts: dict) -> dict:
     """
-    Turn the perceptions.json 'facts' dict into Z3 variables / values.
+    Turn the perceptions 'facts' dict into Z3 variables / values.
 
-    - bool  → BoolVal(v)
-    - int/float → RealVal(v)   (also creates Bool(name) aliases for 0/1 values)
-    - str   → BoolVal for "true"/"false", else ignored
+    - bool      → BoolVal(v)
+    - int/float → RealVal(v)
+    - str       → BoolVal for "true"/"false", else ignored
     """
-    from .z3_compat import And, Implies
-
     vars_ = {}
     for name, value in facts.items():
         safe = name.replace("-", "_").replace(".", "_")
@@ -35,7 +39,7 @@ def _make_fact_vars(facts: dict) -> dict:
             vars_[safe] = BoolVal(value)
         elif isinstance(value, (int, float)):
             vars_[safe] = RealVal(float(value))
-            # Convenience: also a Bool version for 0/1 metrics
+            # Convenience: Bool alias for 0/1 metrics
             if value in (0, 1, 0.0, 1.0):
                 vars_[safe + "_bool"] = BoolVal(bool(value))
         elif isinstance(value, str):
@@ -44,7 +48,6 @@ def _make_fact_vars(facts: dict) -> dict:
                 vars_[safe] = BoolVal(True)
             elif lower in ("false", "no", "0"):
                 vars_[safe] = BoolVal(False)
-            # else: skip non-boolean strings
     return vars_
 
 
@@ -56,8 +59,8 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
         {
             "person":     str,
             "satisfied":  bool,
-            "score":      float,   # fraction of constraints satisfied
-            "violations": [str],   # names of failed constraints (best-effort)
+            "score":      float,
+            "violations": [str],
         }
     """
     fact_vars = _make_fact_vars(facts)
@@ -76,14 +79,13 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
 
     if not constraints:
         return {
-            "person":    person.name,
-            "satisfied": True,
-            "score":     1.0,
+            "person":     person.name,
+            "satisfied":  True,
+            "score":      1.0,
             "violations": [],
         }
 
-    # Check each constraint individually to identify violations
-    passed    = 0
+    passed     = 0
     violations = []
     for i, c in enumerate(constraints):
         solver = Solver()
@@ -105,34 +107,50 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
     }
 
 
+def _load_perceptions_doc(source) -> dict:
+    """
+    Load a perceptions document from:
+      - a dict        → returned as-is
+      - "-"           → read JSON from stdin
+      - a file path   → read and parse JSON
+    """
+    if isinstance(source, dict):
+        return source
+    if source == "-" or source is None:
+        return json.load(sys.stdin)
+    path = Path(source)
+    with open(path) as f:
+        return json.load(f)
+
+
 def run_judgement(
-    perceptions_path: str | Path,
-    user_files: list[str | Path],
-    output_path: str | Path | None = None,
+    perceptions: "str | Path | dict",
+    user_files: list,
+    output_path: "str | Path | None" = None,
 ) -> dict:
     """
     Top-level judgement runner.
 
     Args:
-        perceptions_path: path to perceptions.json
-        user_files:       list of paths to Python user files (Person subclasses)
-        output_path:      where to write results.json (None = don't write)
+        perceptions:  perceptions JSON as a file path, "-" (stdin), or dict
+        user_files:   list of paths to Python user files (Person subclasses)
+        output_path:  write results.json here; None → write JSON to stdout
 
     Returns the full results dict.
     """
     from usersim.schema import validate_perceptions, RESULTS_SCHEMA
 
-    perceptions_path = Path(perceptions_path)
-    with open(perceptions_path) as f:
-        doc = json.load(f)
+    doc = _load_perceptions_doc(perceptions)
     validate_perceptions(doc)
 
-    facts    = doc["facts"]
-    scenario = doc.get("scenario", "unknown")
-    person_name = doc.get("person", "unknown")
+    facts       = doc["facts"]
+    scenario    = doc.get("scenario", "unknown")
+    person_name = doc.get("person", None)
+    # "all" is the conventional value for "evaluate every person"
+    if person_name == "all":
+        person_name = None
 
-    # Load person class(es) from each user file
-    persons  = _load_persons(user_files, target_name=person_name)
+    persons = _load_persons(user_files, target_name=person_name)
 
     person_results = []
     for person in persons:
@@ -153,20 +171,18 @@ def run_judgement(
         },
     }
 
-    if output_path:
-        Path(output_path).write_text(json.dumps(output, indent=2))
-
+    _write_output(output, output_path)
     return output
 
 
 def run_matrix(
-    perceptions_dir: str | Path,
-    user_files: list[str | Path],
-    output_path: str | Path | None = None,
+    perceptions_dir: "str | Path",
+    user_files: list,
+    output_path: "str | Path | None" = None,
 ) -> dict:
     """
-    Run judgement across all perceptions.json files in a directory.
-    Returns a matrix of {person × scenario → result}.
+    Run judgement across all perceptions JSON files in a directory.
+    Returns a matrix of person × scenario results.
     """
     perceptions_dir = Path(perceptions_dir)
     files = sorted(perceptions_dir.glob("*.json"))
@@ -188,16 +204,23 @@ def run_matrix(
         "schema":  "usersim.matrix.v1",
         "results": all_results,
         "summary": {
-            "total":         len(all_results),
-            "satisfied":     satisfied,
-            "score":         round(satisfied / max(len(all_results), 1), 4),
+            "total":     len(all_results),
+            "satisfied": satisfied,
+            "score":     round(satisfied / max(len(all_results), 1), 4),
         },
     }
 
-    if output_path:
-        Path(output_path).write_text(json.dumps(output, indent=2))
-
+    _write_output(output, output_path)
     return output
+
+
+def _write_output(data: dict, output_path) -> None:
+    """Write JSON to a file if output_path given, otherwise stdout."""
+    text = json.dumps(data, indent=2)
+    if output_path:
+        Path(output_path).write_text(text)
+    else:
+        print(text)
 
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
@@ -205,7 +228,6 @@ def run_matrix(
 def _load_persons(user_files: list, target_name: str | None = None) -> list:
     """
     Import each user file and return instances of all Person subclasses found.
-    If target_name is given, only return persons matching that name.
     """
     import importlib.util
     from .person import Person as PersonBase

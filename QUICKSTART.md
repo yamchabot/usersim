@@ -11,13 +11,13 @@ We'll simulate three users evaluating a web API — does it feel fast enough? Ar
 ## 1. Create a project
 
 ```bash
-mkdir api-sim && cd api-sim
+mkdir my-sim && cd my-sim
 usersim init
 ```
 
 This creates:
 ```
-api-sim/
+my-sim/
 ├── usersim.yaml         # project config
 ├── instrumentation.js   # replace with your language of choice
 ├── perceptions.py       # translate metrics → human facts
@@ -35,15 +35,13 @@ rm instrumentation.js users/example_user.py
 
 ## 2. Write the instrumentation
 
-Instrumentation collects raw measurements from your app and writes `metrics.json`. In production this would hook into your real system — for this tutorial, we'll simulate an API call.
+Instrumentation collects raw measurements from your app and **writes metrics JSON to stdout**. In production this would hook into your real system — for this tutorial, we'll simulate an API call.
 
 Create `instrumentation.py`:
 
 ```python
-import json, time, urllib.request
+import json, sys, time, urllib.request
 
-# Simulate measuring your API
-# In production: replace with real measurements
 def measure():
     start = time.time()
     try:
@@ -63,51 +61,31 @@ def measure():
     }
 
 metrics = measure()
-print(f"  response: {metrics['response_ms']:.0f}ms  errors: {metrics['error_rate']:.1%}")
+print(f"  response: {metrics['response_ms']:.0f}ms  errors: {metrics['error_rate']:.1%}",
+      file=sys.stderr)
 
 json.dump({
     "schema":   "usersim.metrics.v1",
     "scenario": "default",
     "metrics":  metrics,
-}, open("metrics.json", "w"), indent=2)
+}, sys.stdout)
 ```
 
-> **That's the only rule for instrumentation:** produce a JSON file with
+> **That's the only rule for instrumentation:** write a JSON object to stdout with
 > `"schema": "usersim.metrics.v1"` and a `"metrics"` object.
 > The file can be written from any language.
-
-Run it once to see what it produces:
-
-```bash
-python3 instrumentation.py
-cat metrics.json
-```
-
-You'll see something like:
-```json
-{
-  "schema": "usersim.metrics.v1",
-  "scenario": "default",
-  "metrics": {
-    "response_ms": 183,
-    "error_rate": 0.0,
-    "uptime_pct": 99.95,
-    "p99_ms": 384.3,
-    "cache_hit": 0.87
-  }
-}
-```
 
 ---
 
 ## 3. Write the perceptions
 
-Perceptions translate raw numbers into what a human would *perceive*. This is the "semantic bridge" — instead of reasoning about `183ms`, users reason about `feels_fast: true`.
+Perceptions **read metrics JSON from stdin**, translate numbers into what a human would *perceive*, and **write perceptions JSON to stdout**.
 
-Replace `perceptions.py` with:
+Create `perceptions.py`:
 
 ```python
-from usersim.perceptions.library import threshold, flag
+import json, sys
+from usersim.perceptions.library import threshold
 
 def compute(metrics, **_):
     return {
@@ -122,39 +100,45 @@ def compute(metrics, **_):
         # Efficiency
         "cache_is_warm":   threshold(metrics, "cache_hit",    min=0.80),
     }
+
+# When run as a script (e.g. piped directly), read stdin → write stdout
+if __name__ == "__main__":
+    doc   = json.load(sys.stdin)
+    facts = compute(doc["metrics"])
+    json.dump({
+        "schema":   "usersim.perceptions.v1",
+        "scenario": doc.get("scenario", "default"),
+        "person":   "all",
+        "facts":    facts,
+    }, sys.stdout)
 ```
 
 A few things to notice:
-- The function is named `compute` — usersim calls this directly when the file is `.py`
-- Each fact is a **human-readable name** for a threshold check
+- The `compute` function is called in-process by `usersim run` (faster — no subprocess)
+- The `if __name__ == "__main__"` block lets it also work as a standalone script in a shell pipe
 - `threshold(metrics, "key", max=X)` returns `True` if `metrics["key"] ≤ X`
-- You have access to [more helpers](README.md#perceptions-layer-2): `ratio`, `in_range`, `normalise`, `flag`, `z_score`, ...
 
-**Run it manually to verify:**
+**Test it in the pipe manually:**
 
 ```bash
-python3 - <<'EOF'
-import json
-from perceptions import compute
-
-with open("metrics.json") as f:
-    m = json.load(f)
-
-facts = compute(m["metrics"])
-for k, v in facts.items():
-    print(f"  {k}: {v}")
-EOF
+python3 instrumentation.py | python3 perceptions.py | python3 -m json.tool
 ```
 
+You'll see something like:
+```json
+{
+  "schema": "usersim.perceptions.v1",
+  "scenario": "default",
+  "person": "all",
+  "facts": {
+    "feels_fast": true,
+    "p99_acceptable": true,
+    "no_errors": true,
+    "high_uptime": true,
+    "cache_is_warm": true
+  }
+}
 ```
-  feels_fast:     True
-  p99_acceptable: True
-  no_errors:      True
-  high_uptime:    True
-  cache_is_warm:  True
-```
-
-Good — all facts are true for this healthy API response. Now let's define users who care about different subsets of these.
 
 ---
 
@@ -164,13 +148,10 @@ Each user is a Python file with a class that extends `Person`. The `constraints(
 
 ### User 1: Power User
 
-Needs speed, reliability, and efficiency. High expectations.
-
 Create `users/power_user.py`:
 
 ```python
 from usersim import Person
-from usersim.judgement.z3_compat import And, Implies
 
 class PowerUser(Person):
     name        = "power_user"
@@ -187,8 +168,6 @@ class PowerUser(Person):
 
 ### User 2: Casual User
 
-Just needs the basics — works correctly, doesn't hang.
-
 Create `users/casual_user.py`:
 
 ```python
@@ -202,19 +181,16 @@ class CasualUser(Person):
         return [
             P.no_errors,      # errors break the experience
             P.high_uptime,    # service must be available
-            # doesn't care about speed or cache efficiency
         ]
 ```
 
 ### User 3: On-Call Engineer
 
-Evaluating the API from an operational perspective.
-
 Create `users/ops_engineer.py`:
 
 ```python
 from usersim import Person
-from usersim.judgement.z3_compat import Implies, And
+from usersim.judgement.z3_compat import Implies
 
 class OpsEngineer(Person):
     name        = "ops_engineer"
@@ -235,31 +211,43 @@ class OpsEngineer(Person):
 
 ---
 
-## 5. Run the judgement
+## 5. Run the pipeline
 
-First, run your instrumentation to get fresh metrics, then run perceptions to get facts:
-
-```bash
-python3 instrumentation.py
-```
-
-Then judge all users against those facts:
+The full pipeline is a single shell pipe:
 
 ```bash
-usersim run \
-  --metrics     metrics.json \
-  --perceptions perceptions.py \
-  --users       users/power_user.py users/casual_user.py users/ops_engineer.py \
-  --out         results.json
+python3 instrumentation.py \
+  | usersim run \
+      --perceptions perceptions.py \
+      --users users/power_user.py users/casual_user.py users/ops_engineer.py
 ```
 
-Expected output (healthy API):
+Results JSON goes to stdout. Human summary goes to stderr:
+
 ```
   ✓ power_user      score=1.000
   ✓ casual_user     score=1.000
   ✓ ops_engineer    score=1.000
 
   3/3 satisfied  (score 100.0%)
+```
+
+Save results to a file with `--out`:
+
+```bash
+python3 instrumentation.py \
+  | usersim run \
+      --perceptions perceptions.py \
+      --users users/*.py \
+      --out results.json
+```
+
+Or run each step explicitly with shell pipes:
+
+```bash
+python3 instrumentation.py \
+  | python3 perceptions.py \
+  | usersim judge --users users/*.py
 ```
 
 ---
@@ -282,11 +270,7 @@ def measure():
 Re-run:
 
 ```bash
-python3 instrumentation.py
-usersim run \
-  --metrics     metrics.json \
-  --perceptions perceptions.py \
-  --users       users/power_user.py users/casual_user.py users/ops_engineer.py
+python3 instrumentation.py | usersim run --perceptions perceptions.py --users users/*.py
 ```
 
 ```
@@ -309,6 +293,14 @@ Different users, different pain points. This is what user simulation tells you t
 ## 7. Generate a report
 
 ```bash
+python3 instrumentation.py \
+  | usersim run --perceptions perceptions.py --users users/*.py \
+  | usersim report
+```
+
+Or from a saved results file:
+
+```bash
 usersim report --results results.json --out report.html
 open report.html    # or xdg-open on Linux
 ```
@@ -319,7 +311,7 @@ The HTML report shows a persona × scenario matrix — green for satisfied, red 
 
 ## 8. Multiple scenarios
 
-Real systems behave differently under different conditions. Test them all:
+Real systems behave differently under different conditions. Create separate perceptions files for each:
 
 Create `perceptions/low_load.json`:
 ```json
@@ -366,35 +358,36 @@ usersim report --results results.json --out report.html
   ops_engineer            ✓             ✗
 ```
 
-**casual_user doesn't care about speed**, so they're satisfied even at peak load. The engineer and ops roles both feel peak load.
+**casual_user doesn't care about speed**, so they're satisfied even at peak load.
 
 ---
 
 ## What to do next
 
-**Add it to CI.** Run your instrumentation in your test suite and pipe results through usersim. Exit code is 0 when all users are satisfied, 1 otherwise — works with any CI system.
+**Add it to CI:**
 
 ```yaml
 # .github/workflows/usersim.yml
-- run: python3 instrumentation.py
 - run: |
-    usersim run \
-      --metrics metrics.json \
-      --perceptions perceptions.py \
-      --users users/*.py \
-      --out results.json
+    python3 instrumentation.py \
+      | usersim run \
+          --perceptions perceptions.py \
+          --users users/*.py \
+          --out results.json
 - run: usersim report --results results.json --out report.html
 - uses: actions/upload-artifact@v4
   with: { name: usersim-report, path: report.html }
 ```
 
-**Add more scenarios.** Each scenario is just a different `metrics.json`. Automate generating them by running your instrumentation in different conditions (low load, peak load, degraded dependency, cold cache).
+Exit code is 0 when all users are satisfied, 1 otherwise — works with any CI system.
+
+**Add more scenarios.** Each scenario is just a different instrumentation run. Parameterize your instrumentation script to simulate different conditions (low load, peak load, degraded dependency, cold cache).
 
 **Add more personas.** One file per persona. Common ones: power user, casual user, accessibility user, ops engineer, new hire, API consumer.
 
-**Write instrumentation in your actual stack.** The JSON format is trivial to produce from any language. See `examples/graph-viz/instrumentation.js` for a JavaScript example.
+**Write instrumentation in your actual stack.** The JSON format is trivial to produce from any language. See `examples/graph-viz/instrumentation.js` for a JavaScript example that writes to stdout.
 
-**Add numeric constraints.** The `RealVal` type lets you express threshold constraints directly in user files:
+**Add numeric constraints:**
 
 ```python
 from usersim.judgement.z3_compat import RealVal

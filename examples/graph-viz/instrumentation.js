@@ -8,8 +8,6 @@
  * Output: metrics.json
  */
 
-const fs = require("fs");
-
 const scenario = process.argv[2] || process.env.USERSIM_SCENARIO || "small_single_module";
 
 // Synthetic metrics per scenario — replace with real measurements from your app
@@ -47,5 +45,6 @@ const output = {
   metrics,
 };
 
-fs.writeFileSync("metrics.json", JSON.stringify(output, null, 2));
-console.log(`[instrumentation] scenario=${scenario} nodes=${metrics.node_count}`);
+// Write metrics JSON to stdout — downstream layers read from stdin
+process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+process.stderr.write(`[instrumentation] scenario=${scenario} nodes=${metrics.node_count}\n`);

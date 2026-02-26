@@ -1,115 +1,117 @@
 """
 Pipeline runner.
 
-Orchestrates: instrumentation → perceptions script → judgement engine.
+Orchestrates: instrumentation → perceptions → judgement.
 
-Each layer communicates via JSON written to files (or stdout/stdin).
-The layer boundary is just a JSON file — so each layer can be in any language.
+All inter-layer communication is JSON on stdout/stdin.
+No temp files.  Each layer can be in any language.
+
+Typical shell usage:
+    python3 instrumentation.py | python3 perceptions.py | usersim judge --users users/*.py
+
+Or driven by the `usersim run` command:
+    python3 instrumentation.py | usersim run --perceptions perceptions.py --users users/*.py
 """
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from usersim.schema import validate_metrics, validate_perceptions, PERCEPTIONS_SCHEMA
 
 
 def run_pipeline(
-    metrics_path: str | Path,
-    perceptions_script: str | Path,
-    user_files: list[str | Path],
-    output_path: str | Path | None = None,
+    perceptions_script: "str | Path",
+    user_files: list,
+    metrics: "dict | None" = None,
+    output_path: "str | Path | None" = None,
     scenario: str = "default",
-    person: str | None = None,
+    person: "str | None" = None,
     verbose: bool = False,
 ) -> dict:
     """
-    Run the full pipeline.
+    Run the perceptions → judgement portion of the pipeline.
 
-    1. Load & validate metrics.json
-    2. Call perceptions script (any language) with metrics on stdin
-    3. Collect perceptions.json from stdout
-    4. Run Z3 judgement
-    5. Return results dict
+    Args:
+        perceptions_script: path to the perceptions script
+        user_files:         list of paths to user Python files
+        metrics:            metrics dict (already loaded); if None, reads from stdin
+        output_path:        write results JSON here; None → write to stdout
+        scenario:           scenario name tag
+        person:             evaluate specific person only (None = all)
+        verbose:            print debug info to stderr
     """
     from usersim.judgement.engine import run_judgement
 
-    # ── Step 1: load metrics ──────────────────────────────────────────────────
-    metrics_path = Path(metrics_path)
-    with open(metrics_path) as f:
-        metrics_doc = json.load(f)
+    # ── Step 1: get metrics ───────────────────────────────────────────────────
+    if metrics is None:
+        if verbose:
+            print("[usersim] reading metrics from stdin …", file=sys.stderr)
+        metrics_doc = json.load(sys.stdin)
+    else:
+        metrics_doc = metrics
+
     validate_metrics(metrics_doc)
     if verbose:
-        print(f"[usersim] Loaded {len(metrics_doc['metrics'])} metrics from {metrics_path}")
+        print(f"[usersim] {len(metrics_doc['metrics'])} metrics loaded", file=sys.stderr)
 
-    # ── Step 2: run perceptions script ────────────────────────────────────────
-    perceptions_script = Path(perceptions_script)
-    perceptions_doc    = _run_perceptions(
-        metrics_doc, perceptions_script, scenario=scenario, person=person, verbose=verbose
+    # ── Step 2: run perceptions script → get perceptions dict ────────────────
+    perceptions_doc = _run_perceptions(
+        metrics_doc,
+        Path(perceptions_script),
+        scenario=scenario,
+        person=person,
+        verbose=verbose,
     )
     validate_perceptions(perceptions_doc)
     if verbose:
-        print(f"[usersim] {len(perceptions_doc['facts'])} facts produced")
+        print(f"[usersim] {len(perceptions_doc['facts'])} facts produced", file=sys.stderr)
 
-    # Write perceptions to a temp file so judgement can read it
-    with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as tf:
-        json.dump(perceptions_doc, tf)
-        perc_path = tf.name
-
-    # ── Step 3: judgement ─────────────────────────────────────────────────────
-    results = run_judgement(
-        perceptions_path=perc_path,
+    # ── Step 3: judgement (in-process, no temp file) ──────────────────────────
+    return run_judgement(
+        perceptions=perceptions_doc,   # pass dict directly — no file needed
         user_files=user_files,
         output_path=output_path,
     )
-    Path(perc_path).unlink(missing_ok=True)
-
-    return results
 
 
 def _run_perceptions(
     metrics_doc: dict,
     script: Path,
     scenario: str,
-    person: str | None,
+    person: "str | None",
     verbose: bool,
 ) -> dict:
     """
     Call the perceptions script.
 
     Protocol:
-      - stdin:  metrics.json content
-      - stdout: perceptions.json content (or each person's perceptions as newline-delimited JSON)
-      - env:    USERSIM_SCENARIO, USERSIM_PERSON
+      stdin  → metrics JSON
+      stdout ← perceptions JSON
 
-    Alternatively, if the script is a .py file, import and call it directly
-    for speed (avoids a subprocess for Python perceptions).
+    If the script is a .py with a compute() function, call it in-process.
+    Otherwise spawn a subprocess (works for Node, Ruby, Go binaries, etc.).
     """
-    metrics_json = json.dumps(metrics_doc)
-
     if script.suffix == ".py":
         return _call_python_perceptions(script, metrics_doc, scenario, person, verbose)
 
-    # Generic subprocess path (works for Node, Ruby, Go, Rust binaries, etc.)
-    import os
     env = {**os.environ, "USERSIM_SCENARIO": scenario, "USERSIM_PERSON": person or ""}
     result = subprocess.run(
         [str(script)],
-        input=metrics_json,
+        input=json.dumps(metrics_doc),
         capture_output=True,
         text=True,
         env=env,
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"Perceptions script exited with code {result.returncode}:\n{result.stderr}"
+            f"Perceptions script exited {result.returncode}:\n{result.stderr}"
         )
     if verbose and result.stderr:
         print("[perceptions]", result.stderr, file=sys.stderr)
-
     return json.loads(result.stdout)
 
 
@@ -117,12 +119,12 @@ def _call_python_perceptions(
     script: Path,
     metrics_doc: dict,
     scenario: str,
-    person: str | None,
+    person: "str | None",
     verbose: bool,
 ) -> dict:
     """
-    Import a Python perceptions.py and call its `compute(metrics, scenario, person)` function.
-    Falls back to subprocess if no `compute` function is found.
+    Import a Python perceptions.py and call compute(metrics, scenario, person).
+    Falls back to subprocess if no compute() function found.
     """
     import importlib.util
 
@@ -132,7 +134,7 @@ def _call_python_perceptions(
 
     if hasattr(mod, "compute"):
         result = mod.compute(metrics_doc["metrics"], scenario=scenario, person=person)
-        # If compute() returns just the facts dict, wrap it
+        # If compute() returns just the facts dict, wrap it in the full schema
         if isinstance(result, dict) and "facts" not in result:
             result = {
                 "schema":   PERCEPTIONS_SCHEMA,
@@ -142,8 +144,7 @@ def _call_python_perceptions(
             }
         return result
 
-    # No compute() function — try running as script via subprocess
-    import os, sys
+    # No compute() — run as script via subprocess (reads stdin, writes stdout)
     env = {**os.environ, "USERSIM_SCENARIO": scenario, "USERSIM_PERSON": person or ""}
     result = subprocess.run(
         [sys.executable, str(script)],
@@ -154,6 +155,6 @@ def _call_python_perceptions(
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"Perceptions script exited with code {result.returncode}:\n{result.stderr}"
+            f"Perceptions script exited {result.returncode}:\n{result.stderr}"
         )
     return json.loads(result.stdout)
