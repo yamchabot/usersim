@@ -4,7 +4,7 @@ usersim CLI
 Primary usage — driven by usersim.yaml config file:
 
     usersim run                        # reads usersim.yaml in cwd
-    usersim run --config ci.yaml       # explicit config file
+    usersim run --config path/to/usersim.yaml  # explicit config
     usersim run --scenario peak_load   # run one specific scenario
     usersim run --out results.json     # save results to file (also stdout)
 

@@ -214,7 +214,6 @@ class OpsEngineer(Person):
 ```bash
 usersim init [DIR]               # scaffold a new project
 usersim run                      # run the full pipeline (reads usersim.yaml)
-usersim run --config ci.yaml     # explicit config file
 usersim run --scenario peak_load # run one specific scenario
 usersim run --out results.json   # save results to file (also stdout)
 usersim run --quiet              # suppress human summary on stderr
