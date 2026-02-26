@@ -17,7 +17,7 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .z3_compat import Bool, BoolVal, Real, RealVal, Solver, sat
+from .z3_compat import Bool, BoolVal, Real, RealVal, Solver, sat, Z3_REAL
 from .person import FactNamespace
 
 if TYPE_CHECKING:
@@ -29,7 +29,8 @@ def _make_fact_vars(facts: dict) -> dict:
     Turn the perceptions 'facts' dict into Z3 variables / values.
 
     - bool      → BoolVal(v)
-    - int/float → RealVal(v)
+    - int/float → named real value — repr is the variable name so violation
+                  messages say "(chain_elongation >= 1.8)" not "(2.1 >= 1.8)"
     - str       → BoolVal for "true"/"false", else ignored
     """
     vars_ = {}
@@ -38,7 +39,7 @@ def _make_fact_vars(facts: dict) -> dict:
         if isinstance(value, bool):
             vars_[safe] = BoolVal(value)
         elif isinstance(value, (int, float)):
-            vars_[safe] = RealVal(float(value))
+            vars_[safe] = _named_real_val(safe, float(value))
             # Convenience: Bool alias for 0/1 metrics
             if value in (0, 1, 0.0, 1.0):
                 vars_[safe + "_bool"] = BoolVal(bool(value))
@@ -49,6 +50,19 @@ def _make_fact_vars(facts: dict) -> dict:
             elif lower in ("false", "no", "0"):
                 vars_[safe] = BoolVal(False)
     return vars_
+
+
+def _named_real_val(name: str, value: float):
+    """
+    A real value whose repr is the variable name rather than the numeric value.
+
+    In the pure-Python fallback: repr = name → violations say "(x >= 0.9)"
+    With real Z3: falls back to RealVal (repr = numeric string).
+    """
+    if not Z3_REAL:
+        from . import z3_compat as _zc
+        return _zc._Expr(lambda env, _v=value: _v, name)
+    return RealVal(value)
 
 
 def evaluate_person(person: "Person", facts: dict) -> dict:
