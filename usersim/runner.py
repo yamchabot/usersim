@@ -1,19 +1,33 @@
 """
 Pipeline runner.
 
-Orchestrates: instrumentation → perceptions → judgement.
+Two modes:
 
-All inter-layer communication is JSON on stdout/stdin.
-No temp files.  Each layer can be in any language.
+1. Config-driven (recommended):
+       usersim run                    # reads usersim.yaml
+       usersim run --config ci.yaml   # explicit config
+   usersim reads the config, runs instrumentation → perceptions → judgement
+   for each declared scenario, then outputs results.  No shell piping needed.
 
-Typical shell usage:
-    python3 instrumentation.py | python3 perceptions.py | usersim judge --users users/*.py
+2. Programmatic (for library use or advanced scripting):
+       run_pipeline(perceptions_script, user_files, metrics=<dict>)
 
-Or driven by the `usersim run` command:
-    python3 instrumentation.py | usersim run --perceptions perceptions.py --users users/*.py
+Config file schema (usersim.yaml):
+
+    version: 1
+    instrumentation: "node instrumentation.js"
+    perceptions: "python3 perceptions.py"
+    users:
+      - users/*.py
+    scenarios:
+      - default
+    output:
+      results: results.json
+      report:  report.html
 """
 from __future__ import annotations
 
+import glob
 import json
 import os
 import subprocess
@@ -22,6 +36,279 @@ from pathlib import Path
 
 from usersim.schema import validate_metrics, validate_perceptions, PERCEPTIONS_SCHEMA
 
+
+# ── Config loading ─────────────────────────────────────────────────────────────
+
+def load_config(path: "str | Path | None" = None) -> dict:
+    """
+    Load and normalise a usersim.yaml config file.
+
+    Searches the current directory by default.  Raises FileNotFoundError
+    if not found.  Returns a normalised dict with resolved glob patterns.
+    """
+    import yaml
+
+    candidates = [path] if path else ["usersim.yaml", ".usersim.yaml", "usersim.yml"]
+    config_path = None
+    for c in candidates:
+        if Path(c).exists():
+            config_path = Path(c)
+            break
+
+    if config_path is None:
+        searched = ", ".join(str(c) for c in candidates)
+        raise FileNotFoundError(
+            f"No usersim config found.  Searched: {searched}\n"
+            f"Run `usersim init` to create one."
+        )
+
+    with open(config_path) as f:
+        raw = yaml.safe_load(f)
+
+    return _normalise_config(raw, config_path.parent)
+
+
+def _normalise_config(raw: dict, base_dir: Path) -> dict:
+    """Resolve globs, apply defaults, validate required fields."""
+    cfg = dict(raw)
+
+    # Required: how to run each stage
+    for key in ("instrumentation", "perceptions"):
+        if key not in cfg:
+            raise ValueError(f"Config is missing required key: '{key}'")
+
+    # Users: expand globs relative to config file location
+    raw_users = cfg.get("users", [])
+    if isinstance(raw_users, str):
+        raw_users = [raw_users]
+    user_files = []
+    for pattern in raw_users:
+        matches = sorted(glob.glob(str(base_dir / pattern)))
+        if not matches:
+            # Try as literal path
+            p = base_dir / pattern
+            if p.exists():
+                matches = [str(p)]
+        user_files.extend(matches)
+    if not user_files:
+        raise ValueError("No user files found.  Check 'users:' patterns in config.")
+    cfg["_user_files"] = user_files
+
+    # Scenarios: list of names (strings)
+    raw_scenarios = cfg.get("scenarios", ["default"])
+    if isinstance(raw_scenarios, str):
+        raw_scenarios = [raw_scenarios]
+    cfg["_scenarios"] = [
+        s if isinstance(s, str) else s.get("name", str(s))
+        for s in raw_scenarios
+    ]
+
+    cfg["_base_dir"] = base_dir
+    return cfg
+
+
+# ── Config-driven pipeline ─────────────────────────────────────────────────────
+
+def run_from_config(
+    config: "dict | str | Path | None" = None,
+    scenario_override: "str | None" = None,
+    output_path: "str | Path | None" = None,
+    verbose: bool = False,
+) -> dict:
+    """
+    Run the full pipeline as declared in a usersim.yaml config file.
+
+    - Runs instrumentation once per scenario (USERSIM_SCENARIO env var set)
+    - Pipes metrics → perceptions → judgement for each scenario
+    - Returns a single results dict or a matrix dict (multiple scenarios)
+
+    Args:
+        config:            path to config file, or already-loaded dict, or None (auto-discover)
+        scenario_override: run only this scenario (ignores config scenarios list)
+        output_path:       write results JSON here; None → stdout
+        verbose:           print stage info to stderr
+    """
+    from usersim.judgement.engine import _write_output
+
+    if not isinstance(config, dict):
+        cfg = load_config(config)
+    else:
+        cfg = config
+
+    base_dir   = cfg["_base_dir"]
+    user_files = cfg["_user_files"]
+    scenarios  = [scenario_override] if scenario_override else cfg["_scenarios"]
+
+    instr_cmd = cfg["instrumentation"]
+    perc_cmd  = cfg["perceptions"]
+    out_cfg   = cfg.get("output", {})
+
+    all_results = []
+
+    for scenario in scenarios:
+        if verbose:
+            print(f"[usersim] scenario: {scenario}", file=sys.stderr)
+
+        # Step 1: run instrumentation
+        metrics_doc = _run_command(instr_cmd, stdin_data=None, scenario=scenario,
+                                   base_dir=base_dir, label="instrumentation", verbose=verbose)
+        validate_metrics(metrics_doc)
+
+        # Step 2: run perceptions
+        perc_doc = _run_perceptions_cmd(perc_cmd, metrics_doc, scenario=scenario,
+                                        base_dir=base_dir, verbose=verbose)
+        validate_perceptions(perc_doc)
+
+        if verbose:
+            print(f"[usersim]   {len(perc_doc['facts'])} facts → judgement", file=sys.stderr)
+
+        # Step 3: judgement (in-process, no output yet — collect all first)
+        from usersim.judgement.engine import _evaluate
+        result = _evaluate(perc_doc, user_files)
+        all_results.append((scenario, result))
+
+    # ── Assemble final output ──────────────────────────────────────────────────
+    if len(all_results) == 1:
+        _scenario, output = all_results[0]
+        eff_output_path = output_path or out_cfg.get("results")
+        _write_output(output, eff_output_path)
+    else:
+        # Matrix: flatten all scenario results into one doc
+        flat = []
+        for scenario, result in all_results:
+            for r in result["results"]:
+                r["scenario"] = scenario
+                flat.append(r)
+        satisfied = sum(1 for r in flat if r["satisfied"])
+        output = {
+            "schema":  "usersim.matrix.v1",
+            "results": flat,
+            "summary": {
+                "total":     len(flat),
+                "satisfied": satisfied,
+                "score":     round(satisfied / max(len(flat), 1), 4),
+            },
+        }
+        eff_output_path = output_path or out_cfg.get("results")
+        _write_output(output, eff_output_path)
+
+    # ── HTML report ────────────────────────────────────────────────────────────
+    report_path = out_cfg.get("report")
+    if report_path:
+        try:
+            from usersim.report.html import generate_report
+            generate_report(output, report_path)
+            if verbose:
+                print(f"[usersim] report: {report_path}", file=sys.stderr)
+        except Exception as e:
+            print(f"[usersim] report skipped: {e}", file=sys.stderr)
+
+    return output
+
+
+# ── Stage runners ──────────────────────────────────────────────────────────────
+
+def _run_command(
+    cmd: str,
+    stdin_data: "str | None",
+    scenario: str,
+    base_dir: Path,
+    label: str,
+    verbose: bool,
+) -> dict:
+    """
+    Run a shell command, passing stdin_data (if any) on stdin.
+    Expects JSON on stdout.  Raises on non-zero exit.
+    """
+    env = {
+        **os.environ,
+        "USERSIM_SCENARIO": scenario,
+    }
+    result = subprocess.run(
+        cmd,
+        shell=True,
+        input=stdin_data,
+        capture_output=True,
+        text=True,
+        cwd=str(base_dir),
+        env=env,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"{label} command failed (exit {result.returncode}):\n"
+            f"  cmd: {cmd}\n"
+            f"  stderr: {result.stderr.strip()}"
+        )
+    if verbose and result.stderr.strip():
+        print(f"[{label}] {result.stderr.strip()}", file=sys.stderr)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"{label} command produced invalid JSON:\n"
+            f"  cmd: {cmd}\n"
+            f"  output: {result.stdout[:200]!r}\n"
+            f"  error: {e}"
+        )
+
+
+def _run_perceptions_cmd(
+    cmd: str,
+    metrics_doc: dict,
+    scenario: str,
+    base_dir: Path,
+    verbose: bool,
+) -> dict:
+    """
+    Run the perceptions stage.
+
+    If cmd is a path to a .py file with a compute() function, call it
+    in-process (no subprocess overhead, better tracebacks).
+    Otherwise spawn a subprocess and pipe metrics JSON on stdin.
+    """
+    script_path = base_dir / cmd.strip().split()[-1]  # last token = script file
+
+    if script_path.suffix == ".py" and script_path.exists():
+        return _call_python_perceptions(script_path, metrics_doc, scenario, verbose)
+
+    # Generic subprocess: pipe metrics JSON to stdin
+    metrics_json = json.dumps(metrics_doc)
+    return _run_command(cmd, stdin_data=metrics_json, scenario=scenario,
+                        base_dir=base_dir, label="perceptions", verbose=verbose)
+
+
+def _call_python_perceptions(
+    script: Path,
+    metrics_doc: dict,
+    scenario: str,
+    verbose: bool,
+) -> dict:
+    """Import a Python perceptions.py and call compute(metrics, scenario=...)."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_usersim_perceptions", script)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    if not hasattr(mod, "compute"):
+        raise RuntimeError(
+            f"Perceptions file {script} has no compute() function.\n"
+            "Either add a compute(metrics, **kwargs) function or use a "
+            "command that reads stdin and writes JSON to stdout."
+        )
+
+    result = mod.compute(metrics_doc["metrics"], scenario=scenario)
+    if isinstance(result, dict) and "facts" not in result:
+        result = {
+            "schema":   PERCEPTIONS_SCHEMA,
+            "scenario": scenario,
+            "person":   "all",
+            "facts":    result,
+        }
+    return result
+
+
+# ── Programmatic pipeline (for library use) ────────────────────────────────────
 
 def run_pipeline(
     perceptions_script: "str | Path",
@@ -33,20 +320,13 @@ def run_pipeline(
     verbose: bool = False,
 ) -> dict:
     """
-    Run the perceptions → judgement portion of the pipeline.
+    Run perceptions → judgement programmatically (no config file).
 
-    Args:
-        perceptions_script: path to the perceptions script
-        user_files:         list of paths to user Python files
-        metrics:            metrics dict (already loaded); if None, reads from stdin
-        output_path:        write results JSON here; None → write to stdout
-        scenario:           scenario name tag
-        person:             evaluate specific person only (None = all)
-        verbose:            print debug info to stderr
+    Reads metrics from stdin if metrics=None.  Useful for library use
+    or advanced scripting where the caller manages instrumentation.
     """
     from usersim.judgement.engine import run_judgement
 
-    # ── Step 1: get metrics ───────────────────────────────────────────────────
     if metrics is None:
         if verbose:
             print("[usersim] reading metrics from stdin …", file=sys.stderr)
@@ -55,106 +335,18 @@ def run_pipeline(
         metrics_doc = metrics
 
     validate_metrics(metrics_doc)
-    if verbose:
-        print(f"[usersim] {len(metrics_doc['metrics'])} metrics loaded", file=sys.stderr)
 
-    # ── Step 2: run perceptions script → get perceptions dict ────────────────
-    perceptions_doc = _run_perceptions(
-        metrics_doc,
-        Path(perceptions_script),
+    perc_doc = _run_perceptions_cmd(
+        cmd=str(perceptions_script),
+        metrics_doc=metrics_doc,
         scenario=scenario,
-        person=person,
+        base_dir=Path("."),
         verbose=verbose,
     )
-    validate_perceptions(perceptions_doc)
-    if verbose:
-        print(f"[usersim] {len(perceptions_doc['facts'])} facts produced", file=sys.stderr)
+    validate_perceptions(perc_doc)
 
-    # ── Step 3: judgement (in-process, no temp file) ──────────────────────────
     return run_judgement(
-        perceptions=perceptions_doc,   # pass dict directly — no file needed
+        perceptions=perc_doc,
         user_files=user_files,
         output_path=output_path,
     )
-
-
-def _run_perceptions(
-    metrics_doc: dict,
-    script: Path,
-    scenario: str,
-    person: "str | None",
-    verbose: bool,
-) -> dict:
-    """
-    Call the perceptions script.
-
-    Protocol:
-      stdin  → metrics JSON
-      stdout ← perceptions JSON
-
-    If the script is a .py with a compute() function, call it in-process.
-    Otherwise spawn a subprocess (works for Node, Ruby, Go binaries, etc.).
-    """
-    if script.suffix == ".py":
-        return _call_python_perceptions(script, metrics_doc, scenario, person, verbose)
-
-    env = {**os.environ, "USERSIM_SCENARIO": scenario, "USERSIM_PERSON": person or ""}
-    result = subprocess.run(
-        [str(script)],
-        input=json.dumps(metrics_doc),
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Perceptions script exited {result.returncode}:\n{result.stderr}"
-        )
-    if verbose and result.stderr:
-        print("[perceptions]", result.stderr, file=sys.stderr)
-    return json.loads(result.stdout)
-
-
-def _call_python_perceptions(
-    script: Path,
-    metrics_doc: dict,
-    scenario: str,
-    person: "str | None",
-    verbose: bool,
-) -> dict:
-    """
-    Import a Python perceptions.py and call compute(metrics, scenario, person).
-    Falls back to subprocess if no compute() function found.
-    """
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("_usersim_perceptions", script)
-    mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    if hasattr(mod, "compute"):
-        result = mod.compute(metrics_doc["metrics"], scenario=scenario, person=person)
-        # If compute() returns just the facts dict, wrap it in the full schema
-        if isinstance(result, dict) and "facts" not in result:
-            result = {
-                "schema":   PERCEPTIONS_SCHEMA,
-                "scenario": scenario,
-                "person":   person or "all",
-                "facts":    result,
-            }
-        return result
-
-    # No compute() — run as script via subprocess (reads stdin, writes stdout)
-    env = {**os.environ, "USERSIM_SCENARIO": scenario, "USERSIM_PERSON": person or ""}
-    result = subprocess.run(
-        [sys.executable, str(script)],
-        input=json.dumps(metrics_doc),
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Perceptions script exited {result.returncode}:\n{result.stderr}"
-        )
-    return json.loads(result.stdout)

@@ -11,42 +11,40 @@ You define simulated personas. You express what each one needs as logical constr
 
 ## How it works
 
-Three layers, connected as a Unix pipeline. Each layer reads JSON from stdin and writes JSON to stdout.
+Declare your pipeline in `usersim.yaml`. Run one command.
+
+```bash
+usersim run
+```
+
+usersim reads the config, runs three stages in sequence, and reports which simulated users are satisfied across all your scenarios:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 1 — Instrumentation     (your language)              │
 │                                                             │
-│  Collect raw measurements from your app.                    │
-│  Write metrics JSON to stdout.                              │
+│  A shell command that collects metrics from your app        │
+│  and writes metrics JSON to stdout.                         │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  { "load_time_ms": 240, "errors": 0 }
-                        ▼  (pipe)
+                        │  { "response_ms": 240, "errors": 0 }
+                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 2 — Perceptions         (any language)               │
 │                                                             │
-│  Read metrics JSON from stdin.                              │
-│  Translate numbers into what a human would perceive.        │
-│  Write perceptions JSON to stdout.                          │
+│  A script that translates numbers into what a human         │
+│  would perceive.  Reads stdin, writes to stdout.            │
 └───────────────────────┬─────────────────────────────────────┘
                         │  { "loads_fast": true, "no_errors": true }
-                        ▼  (pipe)
+                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3 — Judgement           (Z3, controlled by usersim)  │
 │                                                             │
-│  Read perceptions JSON from stdin.                          │
-│  Check each persona's logical constraints.                  │
-│  Write results JSON to stdout.  Human summary to stderr.    │
+│  Evaluates each persona's logical constraints.              │
+│  Reports who is satisfied and why.                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**You write layers 1 and 2. We handle layer 3.**
-
-```bash
-python3 instrumentation.py | python3 perceptions.py | usersim judge --users users/*.py
-```
-
-Instrumentation runs in your app's language. Perceptions can be anything; we ship a Python helper library. Judgement always runs through Z3 — usersim owns that layer so the constraint evaluation is sound and consistent.
+**You write layers 1 and 2 in whatever language fits your project. We handle layer 3.**
 
 ---
 
@@ -59,79 +57,91 @@ pip install "usersim[z3]"    # with the real Z3 solver (recommended)
 
 ---
 
-## A taste
+## Quickstart
 
-**Instrumentation** — measure your app, write metrics JSON to stdout:
-```python
-import json, sys
-
-metrics = {
-    "response_ms": 180,
-    "error_rate":  0.002,
-    "p99_ms":      420,
-}
-json.dump({"schema": "usersim.metrics.v1", "scenario": "api_under_load", "metrics": metrics}, sys.stdout)
-```
-
-**Perceptions** — read metrics from stdin, write perceptions to stdout (`perceptions.py`):
-```python
-import json, sys
-from usersim.perceptions.library import threshold
-
-def compute(metrics, **_):
-    return {
-        "feels_fast":     threshold(metrics, "response_ms", max=200),
-        "no_errors":      threshold(metrics, "error_rate",  max=0.01),
-        "p99_acceptable": threshold(metrics, "p99_ms",      max=500),
-    }
-
-# Called in-process by usersim run, or as a subprocess via shell pipe
-if __name__ == "__main__":
-    doc = json.load(sys.stdin)
-    facts = compute(doc["metrics"])
-    json.dump({"schema": "usersim.perceptions.v1", "scenario": doc.get("scenario", "default"),
-               "person": "all", "facts": facts}, sys.stdout)
-```
-
-**Users** — express what each persona needs (`users/lead_engineer.py`):
-```python
-from usersim import Person
-
-class LeadEngineer(Person):
-    name = "lead_engineer"
-
-    def constraints(self, P):
-        return [
-            P.feels_fast,
-            P.no_errors,
-            P.p99_acceptable,
-        ]
-```
-
-**Run — full pipeline with shell pipes:**
 ```bash
-python3 instrumentation.py | python3 perceptions.py | usersim judge --users users/*.py
+usersim init      # scaffold project files
+# edit instrumentation.*, perceptions.py, users/*.py
+usersim run       # run the full pipeline
 ```
 
-**Or let usersim drive the perceptions step:**
-```bash
-python3 instrumentation.py | usersim run --perceptions perceptions.py --users users/*.py
-```
-
-Results JSON goes to stdout. Human summary goes to stderr:
-```
-  ✓ lead_engineer    score=1.000
-  ✓ casual_user      score=1.000
-  ✗ ops_engineer     score=0.667 — P.p99_acceptable
-
-  2/3 satisfied  (score 88.9%)
-```
+See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough (~10 minutes).
 
 ---
 
-## Getting started
+## Configuration
 
-→ **[QUICKSTART.md](QUICKSTART.md)** — build a working simulation from scratch in ~10 minutes
+`usersim.yaml` is the single source of truth for your simulation:
+
+```yaml
+version: 1
+
+# Shell command to run instrumentation (any language).
+# usersim runs this, reads metrics JSON from its stdout.
+# USERSIM_SCENARIO env var is set to the current scenario name.
+instrumentation: "node instrumentation.js"
+
+# Shell command (or Python file with compute()) for perceptions.
+# Reads metrics JSON from stdin, writes perceptions JSON to stdout.
+perceptions: "python3 perceptions.py"
+
+# User persona files. Glob patterns supported.
+users:
+  - users/*.py
+
+# Run the pipeline once per scenario.
+scenarios:
+  - default
+  - peak_load
+  - degraded
+
+# Optional: save output to files.
+output:
+  results: results.json
+  report:  report.html
+```
+
+For each scenario, usersim:
+1. Runs `instrumentation` with `USERSIM_SCENARIO=<name>` in the environment
+2. Pipes its output to `perceptions` on stdin
+3. Runs judgement in-process and collects results
+
+If there are multiple scenarios, the final output is a matrix of person × scenario results.
+
+---
+
+## Integrating with your build system
+
+`usersim run` is a single command with no arguments. Drop it anywhere:
+
+**Makefile:**
+```makefile
+test-ux:
+    usersim run
+```
+
+**package.json:**
+```json
+"scripts": {
+    "test:ux": "usersim run"
+}
+```
+
+**pyproject.toml:**
+```toml
+[tool.hatch.envs.default.scripts]
+test-ux = "usersim run"
+```
+
+**GitHub Actions:**
+```yaml
+- run: pip install usersim
+- run: usersim run --out results.json
+- uses: actions/upload-artifact@v4
+  with: { name: usersim-report, path: report.html }
+```
+
+Exit code is 0 when all users are satisfied across all scenarios, 1 otherwise.
 
 ---
 
@@ -139,98 +149,103 @@ Results JSON goes to stdout. Human summary goes to stderr:
 
 ### Instrumentation (Layer 1)
 
-Runs in your application's language. The only contract: write a JSON object to stdout matching this schema:
+Runs in your application's language. The only contract: write a JSON object to stdout:
 
 ```json
 {
   "schema":   "usersim.metrics.v1",
-  "scenario": "optional-name",
-  "metrics":  { "key": value, ... }
+  "scenario": "peak_load",
+  "metrics":  { "response_ms": 480, "error_rate": 0.05 }
 }
 ```
 
-Can be a script you call in CI, a test hook, a benchmark runner — whatever fits your workflow. The downstream layers read it from a pipe; no files needed.
+`USERSIM_SCENARIO` is available in the environment so one script can serve all scenarios:
+
+```python
+scenario = os.environ.get("USERSIM_SCENARIO", "default")
+metrics  = measure_for_scenario(scenario)
+```
 
 ### Perceptions (Layer 2)
 
-Reads metrics JSON from stdin, translates raw numbers into human-meaningful facts, writes perceptions JSON to stdout. Python is recommended — we ship a library of helpers:
+Translates raw numbers into human-meaningful facts. Python files with a `compute()` function are called in-process (faster). Any other executable is spawned with metrics JSON on stdin:
 
 ```python
 from usersim.perceptions.library import threshold, ratio, flag, in_range, normalise
-```
 
-This layer can also be any other executable (Node, Go, Ruby…) as long as it respects the stdin → stdout JSON contract.
+def compute(metrics: dict, scenario: str = "default", **kwargs) -> dict:
+    return {
+        "feels_fast":  threshold(metrics, "response_ms", max=200),
+        "no_errors":   threshold(metrics, "error_rate",  max=0.01),
+    }
+```
 
 ### Users (Layer 3)
 
-Each user is a Python class. The `constraints()` method returns a list of Z3 expressions. Every constraint must be satisfiable for the user to be "satisfied". Partial satisfaction is scored (fraction of passing constraints).
+Each user is a Python class. `constraints()` returns a list of Z3 expressions:
 
 ```python
-from usersim.judgement.z3_compat import And, Or, Not, Implies
+from usersim import Person
+from usersim.judgement.z3_compat import Implies
+
+class OpsEngineer(Person):
+    name = "ops_engineer"
+
+    def constraints(self, P):
+        return [
+            P.no_errors,
+            P.high_uptime,
+            Implies(P.cache_is_warm, P.feels_fast),
+        ]
 ```
 
 | Expression | Meaning |
 |---|---|
 | `P.fact` | fact must be true |
 | `Not(P.fact)` | fact must be false |
+| `Implies(P.a, P.b)` | if a then b |
 | `And(P.a, P.b)` | both must hold |
 | `Or(P.a, P.b)` | at least one must hold |
-| `Implies(P.a, P.b)` | if a then b (vacuously true when a is false) |
-| `P.score >= RealVal(0.8)` | numeric threshold |
-
-### Scenarios
-
-Run the same users against multiple scenarios (e.g. "low load" vs "peak load"). The matrix output shows who is satisfied under which conditions.
 
 ---
 
 ## CLI reference
 
 ```bash
-# Scaffold a new project
-usersim init [directory]
+usersim init [DIR]               # scaffold a new project
+usersim run                      # run the full pipeline (reads usersim.yaml)
+usersim run --config ci.yaml     # explicit config file
+usersim run --scenario peak_load # run one specific scenario
+usersim run --out results.json   # save results to file (also stdout)
+usersim run --quiet              # suppress human summary on stderr
+usersim run --verbose            # print stage info to stderr
 
-# Full pipeline: usersim drives perceptions + judgement
-# metrics JSON read from stdin (pipe your instrumentation in)
-python3 instrumentation.py | usersim run \
-  --perceptions perceptions.py \
-  --users       users/*.py
+# One-off judgement (no config file needed):
+usersim judge --users users/*.py            # reads perceptions JSON from stdin
+usersim judge --perceptions p.json ...      # from a file
+usersim judge --perceptions-dir perc/ ...   # matrix mode
 
-# Judgement only: pipe perceptions JSON in from stdin
-python3 perceptions.py | usersim judge --users users/*.py
-
-# Judgement from a file (backward compat)
-usersim judge --perceptions perceptions.json --users users/*.py
-
-# Matrix mode: directory of perceptions files × all users
-usersim judge --perceptions-dir perceptions/ --users users/*.py
-
-# Save results to a file instead of stdout
-python3 instrumentation.py | usersim run \
-  --perceptions perceptions.py \
-  --users       users/*.py \
-  --out         results.json
-
-# Generate HTML report (pipe results in, or use --results file)
-usersim run ... | usersim report
-usersim report --results results.json --out report.html
+# HTML report:
+usersim run | usersim report                # pipe results into report
+usersim report --results results.json       # from a file
 ```
-
-**Flags available on all commands:**
-- `--out FILE` — write JSON output to a file (default: stdout)
-- `--quiet` — suppress human summary on stderr (`run` and `judge` only)
 
 ---
 
 ## Example
 
-[`examples/graph-viz/`](examples/graph-viz/) shows usersim applied to a force-directed graph visualization. The instrumentation is JavaScript (measuring layout physics), the perceptions translate geometry into legibility facts, and two personas (CTO, Staff Engineer) express what they need to understand the graph. This is the real-world case that motivated usersim's creation.
+[`examples/graph-viz/`](examples/graph-viz/) shows usersim applied to a force-directed graph visualization. Instrumentation is JavaScript (synthetic layout metrics), perceptions translate geometry into legibility facts, and two personas evaluate three scenarios. Run it with:
+
+```bash
+cd examples/graph-viz
+usersim run
+```
 
 ---
 
 ## Z3 on ARM64
 
-`z3-solver` isn't packaged for all ARM64 Python versions (Apple Silicon, Raspberry Pi). usersim ships a pure-Python fallback that handles all the constraint patterns above. Install `usersim[z3]` when possible; the fallback activates automatically otherwise.
+`z3-solver` isn't packaged for all ARM64 Python versions (Apple Silicon, Raspberry Pi). usersim ships a pure-Python fallback that handles all constraint patterns above. Install `usersim[z3]` when possible; the fallback activates automatically otherwise.
 
 ---
 

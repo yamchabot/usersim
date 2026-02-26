@@ -123,6 +123,41 @@ def _load_perceptions_doc(source) -> dict:
         return json.load(f)
 
 
+def _evaluate(perceptions_doc: dict, user_files: list) -> dict:
+    """
+    Core evaluation: check all persons against one perceptions document.
+    Returns the results dict.  Does not write any output.
+    """
+    from usersim.schema import RESULTS_SCHEMA
+
+    facts       = perceptions_doc["facts"]
+    scenario    = perceptions_doc.get("scenario", "unknown")
+    person_name = perceptions_doc.get("person", None)
+    if person_name == "all":
+        person_name = None
+
+    persons = _load_persons(user_files, target_name=person_name)
+
+    person_results = []
+    for person in persons:
+        result = evaluate_person(person, facts)
+        result["scenario"] = scenario
+        person_results.append(result)
+
+    return {
+        "schema":   RESULTS_SCHEMA,
+        "scenario": scenario,
+        "results":  person_results,
+        "summary": {
+            "total":     len(person_results),
+            "satisfied": sum(1 for r in person_results if r["satisfied"]),
+            "score":     round(
+                sum(r["score"] for r in person_results) / max(len(person_results), 1), 4
+            ),
+        },
+    }
+
+
 def run_judgement(
     perceptions: "str | Path | dict",
     user_files: list,
@@ -138,39 +173,11 @@ def run_judgement(
 
     Returns the full results dict.
     """
-    from usersim.schema import validate_perceptions, RESULTS_SCHEMA
+    from usersim.schema import validate_perceptions
 
     doc = _load_perceptions_doc(perceptions)
     validate_perceptions(doc)
-
-    facts       = doc["facts"]
-    scenario    = doc.get("scenario", "unknown")
-    person_name = doc.get("person", None)
-    # "all" is the conventional value for "evaluate every person"
-    if person_name == "all":
-        person_name = None
-
-    persons = _load_persons(user_files, target_name=person_name)
-
-    person_results = []
-    for person in persons:
-        result = evaluate_person(person, facts)
-        result["scenario"] = scenario
-        person_results.append(result)
-
-    output = {
-        "schema":   RESULTS_SCHEMA,
-        "scenario": scenario,
-        "results":  person_results,
-        "summary": {
-            "total":     len(person_results),
-            "satisfied": sum(1 for r in person_results if r["satisfied"]),
-            "score":     round(
-                sum(r["score"] for r in person_results) / max(len(person_results), 1), 4
-            ),
-        },
-    }
-
+    output = _evaluate(doc, user_files)
     _write_output(output, output_path)
     return output
 

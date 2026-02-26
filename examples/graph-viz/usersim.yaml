@@ -1,21 +1,26 @@
-name: graph-viz-example
+# usersim.yaml — graph-viz example
+#
+# Run: usersim run
+#
+# This simulates two users (CTO, Staff Engineer) evaluating a force-directed
+# graph layout across three scenarios of varying complexity.
 version: 1
 
-instrumentation:
-  command: "node instrumentation.js {scenario}"
-  output:  metrics.json
+# JavaScript instrumentation — produces synthetic layout metrics.
+# USERSIM_SCENARIO selects which graph topology to simulate.
+instrumentation: "node instrumentation.js"
 
-perceptions:
-  script: perceptions.py
+# Python perceptions — translates layout metrics into legibility facts.
+# Called in-process (compute() function detected automatically).
+perceptions: "python3 perceptions.py"
 
 users:
-  - users/cto.py
-  - users/staff_engineer.py
+  - users/*.py
 
 scenarios:
-  - name: small_single_module
-  - name: five_modules_gateway
-  - name: spaghetti_large
+  - small_single_module
+  - five_modules_gateway
+  - spaghetti_large
 
 output:
   results: results.json

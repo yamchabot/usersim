@@ -18,29 +18,52 @@ usersim init
 This creates:
 ```
 my-sim/
-├── usersim.yaml         # project config
-├── instrumentation.js   # replace with your language of choice
+├── usersim.yaml         # pipeline config — this is what usersim run reads
+├── instrumentation.py   # collect metrics from your app
 ├── perceptions.py       # translate metrics → human facts
 └── users/
     └── example_user.py  # your first persona
 ```
 
-We'll replace these files with our own. Delete the scaffolded ones:
+We'll replace the stub files with our own. Delete the scaffolded ones:
 
 ```bash
-rm instrumentation.js users/example_user.py
+rm users/example_user.py
 ```
 
 ---
 
-## 2. Write the instrumentation
+## 2. Configure the pipeline
 
-Instrumentation collects raw measurements from your app and **writes metrics JSON to stdout**. In production this would hook into your real system — for this tutorial, we'll simulate an API call.
+Open `usersim.yaml` — it declares how to run each stage:
 
-Create `instrumentation.py`:
+```yaml
+version: 1
+instrumentation: "python3 instrumentation.py"
+perceptions: "python3 perceptions.py"
+users:
+  - users/*.py
+scenarios:
+  - default
+output:
+  results: results.json
+  report:  report.html
+```
+
+This is all usersim needs to know. When you run `usersim run`, it executes each stage in sequence — no manual piping required.
+
+---
+
+## 3. Write the instrumentation
+
+Instrumentation collects raw measurements from your app and **writes metrics JSON to stdout**. usersim reads it and passes it to the next stage automatically.
+
+Replace `instrumentation.py` with:
 
 ```python
-import json, sys, time, urllib.request
+import json, sys, time, urllib.request, os
+
+scenario = os.environ.get("USERSIM_SCENARIO", "default")
 
 def measure():
     start = time.time()
@@ -56,97 +79,49 @@ def measure():
         "response_ms": response_ms,
         "error_rate":  error_rate,
         "uptime_pct":  99.95,
-        "p99_ms":      response_ms * 2.1,   # synthetic p99
+        "p99_ms":      response_ms * 2.1,
         "cache_hit":   0.87,
     }
 
 metrics = measure()
-print(f"  response: {metrics['response_ms']:.0f}ms  errors: {metrics['error_rate']:.1%}",
-      file=sys.stderr)
+print(f"  response: {metrics['response_ms']:.0f}ms", file=sys.stderr)
 
 json.dump({
     "schema":   "usersim.metrics.v1",
-    "scenario": "default",
+    "scenario": scenario,
     "metrics":  metrics,
 }, sys.stdout)
 ```
 
-> **That's the only rule for instrumentation:** write a JSON object to stdout with
-> `"schema": "usersim.metrics.v1"` and a `"metrics"` object.
-> The file can be written from any language.
+> `USERSIM_SCENARIO` is set automatically by usersim for each scenario run.
+> One instrumentation script can serve all your scenarios.
 
 ---
 
-## 3. Write the perceptions
+## 4. Write the perceptions
 
-Perceptions **read metrics JSON from stdin**, translate numbers into what a human would *perceive*, and **write perceptions JSON to stdout**.
-
-Create `perceptions.py`:
+Perceptions translate raw numbers into what a human would *perceive*. Replace `perceptions.py`:
 
 ```python
-import json, sys
 from usersim.perceptions.library import threshold
 
-def compute(metrics, **_):
+def compute(metrics: dict, **_) -> dict:
     return {
-        # Speed
         "feels_fast":      threshold(metrics, "response_ms",  max=200),
         "p99_acceptable":  threshold(metrics, "p99_ms",       max=500),
-
-        # Reliability
         "no_errors":       threshold(metrics, "error_rate",   max=0.01),
         "high_uptime":     threshold(metrics, "uptime_pct",   min=99.9),
-
-        # Efficiency
         "cache_is_warm":   threshold(metrics, "cache_hit",    min=0.80),
     }
-
-# When run as a script (e.g. piped directly), read stdin → write stdout
-if __name__ == "__main__":
-    doc   = json.load(sys.stdin)
-    facts = compute(doc["metrics"])
-    json.dump({
-        "schema":   "usersim.perceptions.v1",
-        "scenario": doc.get("scenario", "default"),
-        "person":   "all",
-        "facts":    facts,
-    }, sys.stdout)
 ```
 
-A few things to notice:
-- The `compute` function is called in-process by `usersim run` (faster — no subprocess)
-- The `if __name__ == "__main__"` block lets it also work as a standalone script in a shell pipe
-- `threshold(metrics, "key", max=X)` returns `True` if `metrics["key"] ≤ X`
-
-**Test it in the pipe manually:**
-
-```bash
-python3 instrumentation.py | python3 perceptions.py | python3 -m json.tool
-```
-
-You'll see something like:
-```json
-{
-  "schema": "usersim.perceptions.v1",
-  "scenario": "default",
-  "person": "all",
-  "facts": {
-    "feels_fast": true,
-    "p99_acceptable": true,
-    "no_errors": true,
-    "high_uptime": true,
-    "cache_is_warm": true
-  }
-}
-```
+usersim detects the `compute()` function and calls it directly — no subprocess, no piping needed on your end.
 
 ---
 
-## 4. Define your users
+## 5. Define your users
 
-Each user is a Python file with a class that extends `Person`. The `constraints()` method returns a list of Z3 expressions — all must be satisfied for this user to be happy.
-
-### User 1: Power User
+Each user is a Python file with a class that extends `Person`.
 
 Create `users/power_user.py`:
 
@@ -159,14 +134,12 @@ class PowerUser(Person):
 
     def constraints(self, P):
         return [
-            P.feels_fast,         # response must be under 200ms
-            P.p99_acceptable,     # tail latency matters too
-            P.no_errors,          # zero tolerance for errors
-            P.cache_is_warm,      # expects efficient caching
+            P.feels_fast,
+            P.p99_acceptable,
+            P.no_errors,
+            P.cache_is_warm,
         ]
 ```
-
-### User 2: Casual User
 
 Create `users/casual_user.py`:
 
@@ -179,12 +152,10 @@ class CasualUser(Person):
 
     def constraints(self, P):
         return [
-            P.no_errors,      # errors break the experience
-            P.high_uptime,    # service must be available
+            P.no_errors,
+            P.high_uptime,
         ]
 ```
-
-### User 3: On-Call Engineer
 
 Create `users/ops_engineer.py`:
 
@@ -198,31 +169,25 @@ class OpsEngineer(Person):
 
     def constraints(self, P):
         return [
-            P.high_uptime,                          # SLA requires 99.9%+
-            P.no_errors,                            # errors page them at 3am
-            Implies(P.cache_is_warm, P.feels_fast), # if cache works, it must be fast
-            P.p99_acceptable,                       # p99 is in the SLA
+            P.high_uptime,
+            P.no_errors,
+            Implies(P.cache_is_warm, P.feels_fast),
+            P.p99_acceptable,
         ]
 ```
 
-> **`Implies(A, B)`** means "if A is true, then B must also be true." When A is false,
-> the constraint is vacuously satisfied — this lets you express conditional requirements
-> without failing when a feature is simply absent.
+> **`Implies(A, B)`** means "if A is true, B must also be true." When A is false,
+> the constraint is vacuously satisfied — useful for conditional requirements.
 
 ---
 
-## 5. Run the pipeline
-
-The full pipeline is a single shell pipe:
+## 6. Run it
 
 ```bash
-python3 instrumentation.py \
-  | usersim run \
-      --perceptions perceptions.py \
-      --users users/power_user.py users/casual_user.py users/ops_engineer.py
+usersim run
 ```
 
-Results JSON goes to stdout. Human summary goes to stderr:
+That's it. usersim reads `usersim.yaml`, runs instrumentation → perceptions → judgement, and prints a summary:
 
 ```
   ✓ power_user      score=1.000
@@ -232,170 +197,119 @@ Results JSON goes to stdout. Human summary goes to stderr:
   3/3 satisfied  (score 100.0%)
 ```
 
-Save results to a file with `--out`:
-
-```bash
-python3 instrumentation.py \
-  | usersim run \
-      --perceptions perceptions.py \
-      --users users/*.py \
-      --out results.json
-```
-
-Or run each step explicitly with shell pipes:
-
-```bash
-python3 instrumentation.py \
-  | python3 perceptions.py \
-  | usersim judge --users users/*.py
-```
+Results are saved to `results.json` and a human-readable report to `report.html` (as configured in `usersim.yaml`).
 
 ---
 
-## 6. Break something and see who notices
+## 7. Break something and see who notices
 
-Edit `instrumentation.py` to simulate a slow, error-prone API:
+Edit `instrumentation.py` to simulate a degraded API:
 
 ```python
 def measure():
     return {
-        "response_ms": 480,    # slow
-        "error_rate":  0.05,   # 5% errors
+        "response_ms": 480,
+        "error_rate":  0.05,
         "uptime_pct":  99.95,
-        "p99_ms":      950,    # terrible p99
-        "cache_hit":   0.60,   # cache is cold
+        "p99_ms":      950,
+        "cache_hit":   0.60,
     }
 ```
 
 Re-run:
 
 ```bash
-python3 instrumentation.py | usersim run --perceptions perceptions.py --users users/*.py
+usersim run
 ```
 
 ```
-  ✗ power_user      score=0.000 — P.feels_fast
-  ✗ casual_user     score=0.500 — P.no_errors
-  ✗ ops_engineer    score=0.250 — P.no_errors
+  ✗ power_user      score=0.000 — ...
+  ✗ casual_user     score=0.500 — ...
+  ✗ ops_engineer    score=0.250 — ...
 
   0/3 satisfied  (score 25.0%)
 ```
 
-Notice:
-- **power_user** fails everything (first violation shown: `P.feels_fast`)
-- **casual_user** only cares about errors and uptime — still fails because of the error rate
-- **ops_engineer** fails too, but scores differently based on their constraint weights
-
-Different users, different pain points. This is what user simulation tells you that a test suite can't.
-
----
-
-## 7. Generate a report
-
-```bash
-python3 instrumentation.py \
-  | usersim run --perceptions perceptions.py --users users/*.py \
-  | usersim report
-```
-
-Or from a saved results file:
-
-```bash
-usersim report --results results.json --out report.html
-open report.html    # or xdg-open on Linux
-```
-
-The HTML report shows a persona × scenario matrix — green for satisfied, red for failed, with constraint violation details on hover.
+Different users, different pain points — this is what user simulation tells you that a test suite can't.
 
 ---
 
 ## 8. Multiple scenarios
 
-Real systems behave differently under different conditions. Create separate perceptions files for each:
+Add scenarios to `usersim.yaml`:
 
-Create `perceptions/low_load.json`:
-```json
-{
-  "schema": "usersim.perceptions.v1",
-  "scenario": "low_load",
-  "person": "all",
-  "facts": {
-    "feels_fast": true, "p99_acceptable": true,
-    "no_errors": true, "high_uptime": true, "cache_is_warm": true
-  }
-}
+```yaml
+scenarios:
+  - default
+  - peak_load
+  - cold_cache
 ```
 
-Create `perceptions/peak_load.json`:
-```json
-{
-  "schema": "usersim.perceptions.v1",
-  "scenario": "peak_load",
-  "person": "all",
-  "facts": {
-    "feels_fast": false, "p99_acceptable": false,
-    "no_errors": true, "high_uptime": true, "cache_is_warm": false
-  }
+Use `USERSIM_SCENARIO` in `instrumentation.py` to vary conditions:
+
+```python
+scenario = os.environ.get("USERSIM_SCENARIO", "default")
+
+SCENARIO_METRICS = {
+    "default":    {"response_ms": 120, "error_rate": 0.0,  "cache_hit": 0.87, ...},
+    "peak_load":  {"response_ms": 480, "error_rate": 0.02, "cache_hit": 0.40, ...},
+    "cold_cache": {"response_ms": 350, "error_rate": 0.0,  "cache_hit": 0.05, ...},
 }
+metrics = SCENARIO_METRICS.get(scenario, SCENARIO_METRICS["default"])
 ```
 
-Run the matrix:
+Run:
 
 ```bash
-usersim judge \
-  --perceptions-dir perceptions/ \
-  --users users/*.py \
-  --out results.json
-
-usersim report --results results.json --out report.html
+usersim run
 ```
 
-```
-                      low_load      peak_load
-  ────────────────────────────────────────────
-  power_user              ✓             ✗
-  casual_user             ✓             ✓
-  ops_engineer            ✓             ✗
-```
+usersim runs the pipeline once per scenario and shows a matrix:
 
-**casual_user doesn't care about speed**, so they're satisfied even at peak load.
+```
+                      default    peak_load   cold_cache
+  ──────────────────────────────────────────────────────
+  power_user              ✓             ✗            ✗
+  casual_user             ✓             ✓            ✓
+  ops_engineer            ✓             ✗            ✓
+```
 
 ---
 
 ## What to do next
 
-**Add it to CI:**
+**Add to CI:**
 
 ```yaml
-# .github/workflows/usersim.yml
-- run: |
-    python3 instrumentation.py \
-      | usersim run \
-          --perceptions perceptions.py \
-          --users users/*.py \
-          --out results.json
-- run: usersim report --results results.json --out report.html
+- run: pip install usersim
+- run: usersim run --out results.json
 - uses: actions/upload-artifact@v4
   with: { name: usersim-report, path: report.html }
 ```
 
-Exit code is 0 when all users are satisfied, 1 otherwise — works with any CI system.
+**Add to your Makefile:**
 
-**Add more scenarios.** Each scenario is just a different instrumentation run. Parameterize your instrumentation script to simulate different conditions (low load, peak load, degraded dependency, cold cache).
+```makefile
+test-ux:
+    usersim run
+```
 
-**Add more personas.** One file per persona. Common ones: power user, casual user, accessibility user, ops engineer, new hire, API consumer.
+**Add to package.json:**
 
-**Write instrumentation in your actual stack.** The JSON format is trivial to produce from any language. See `examples/graph-viz/instrumentation.js` for a JavaScript example that writes to stdout.
+```json
+"scripts": { "test:ux": "usersim run" }
+```
 
-**Add numeric constraints:**
+Exit code is 0 when all users are satisfied, 1 otherwise — compatible with any CI system.
 
-```python
-from usersim.judgement.z3_compat import RealVal
+**Use a different language for instrumentation.** The config just specifies a shell command:
 
-def constraints(self, P):
-    return [
-        P.response_ms <= RealVal(200),   # numeric threshold in the user layer
-    ]
+```yaml
+instrumentation: "cargo run --bin measure --release"
+# or:
+instrumentation: "mvn exec:java -Dexec.mainClass=Measure"
+# or:
+instrumentation: "./measure.sh"
 ```
 
 ---
@@ -403,6 +317,5 @@ def constraints(self, P):
 ## Reference
 
 - [README.md](README.md) — architecture overview and full CLI reference
-- [`examples/graph-viz/`](examples/graph-viz/) — real-world example (JavaScript instrumentation, graph layout perceptions)
-- [`usersim/perceptions/library.py`](usersim/perceptions/library.py) — full perception helper reference
-- [`usersim/judgement/z3_compat.py`](usersim/judgement/z3_compat.py) — Z3 expressions reference
+- [`examples/graph-viz/`](examples/graph-viz/) — real-world example (JavaScript instrumentation)
+- [`usersim/perceptions/library.py`](usersim/perceptions/library.py) — perception helper reference
