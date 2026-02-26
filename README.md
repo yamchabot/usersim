@@ -1,315 +1,201 @@
 # usersim
 
-**User simulation framework.** Define simulated personas. Express their needs as logical constraints. Measure whether your application satisfies them — automatically, on every build.
+**Test whether your application satisfies real users — not just whether it works.**
+
+Most test suites check correctness: *did this return 200? did this render?*  
+usersim checks satisfaction: *would the CTO understand this screen? would the on-call engineer trust this dashboard?*
+
+You define simulated personas. You express what each one needs as logical constraints. usersim measures whether your application satisfies them — automatically, on every build.
 
 ---
 
-## The idea
+## How it works
 
-Most application testing checks *correctness* ("does this return 200?").  
-User simulation checks *satisfaction* ("would Sarah the CTO understand this screen?").
+Three layers. Each talks to the next through a JSON file.
 
-You define:
-1. **Metrics** — raw measurements from your app (load time, error rate, visual complexity)
-2. **Perceptions** — what those numbers mean to a human ("loads fast", "too cluttered")
-3. **Users** — named personas with logical constraints ("Sarah needs clusters visible on large graphs")
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 1 — Instrumentation     (your language)              │
+│                                                             │
+│  Collect raw measurements from your app.                    │
+│  Output: metrics.json                                       │
+└───────────────────────┬─────────────────────────────────────┘
+                        │  { "load_time_ms": 240, "errors": 0 }
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 2 — Perceptions         (any language)               │
+│                                                             │
+│  Translate numbers into what a human would perceive.        │
+│  Output: perceptions.json                                   │
+└───────────────────────┬─────────────────────────────────────┘
+                        │  { "loads_fast": true, "no_errors": true }
+                        ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Layer 3 — Judgement           (Z3, controlled by usersim)  │
+│                                                             │
+│  Check each persona's logical constraints.                  │
+│  Output: results.json + report.html                         │
+└─────────────────────────────────────────────────────────────┘
+```
 
-usersim runs the chain, uses Z3 to check the constraints, and tells you who's satisfied.
+**You write layers 1 and 2. We handle layer 3.**
+
+Instrumentation runs in your app's language. Perceptions can be anything; we provide a Python helper library. Judgement always runs through Z3 — usersim owns that layer so the constraint evaluation is sound and consistent.
 
 ---
 
 ## Install
 
 ```bash
-pip install usersim          # core (pure-Python Z3 fallback included)
-pip install usersim[z3]      # with real Z3 solver (recommended)
+pip install usersim          # includes a pure-Python Z3 fallback
+pip install "usersim[z3]"    # with the real Z3 solver (recommended)
 ```
 
 ---
 
-## Quick start
+## A taste
 
+**Instrumentation** — measure your app and write `metrics.json`:
+```json
+{
+  "schema":   "usersim.metrics.v1",
+  "scenario": "api_under_load",
+  "metrics":  { "response_ms": 180, "error_rate": 0.002, "p99_ms": 420 }
+}
+```
+
+**Perceptions** — translate numbers into human facts (`perceptions.py`):
+```python
+from usersim.perceptions.library import threshold
+
+def compute(metrics, **_):
+    return {
+        "feels_fast":    threshold(metrics, "response_ms", max=200),
+        "no_errors":     threshold(metrics, "error_rate",  max=0.01),
+        "p99_acceptable":threshold(metrics, "p99_ms",      max=500),
+    }
+```
+
+**Users** — express what each persona needs (`users/lead_engineer.py`):
+```python
+from usersim import Person
+from usersim.judgement.z3_compat import Implies
+
+class LeadEngineer(Person):
+    name = "lead_engineer"
+
+    def constraints(self, P):
+        return [
+            P.feels_fast,
+            P.no_errors,
+            P.p99_acceptable,
+        ]
+```
+
+**Run:**
 ```bash
-usersim init               # scaffold instrumentation, perceptions.py, users/
-# … edit the three layers …
-node instrumentation.js    # write metrics.json
-usersim judge \
-  --perceptions perceptions.json \
-  --users users/*.py
+usersim judge --perceptions perceptions.json --users users/*.py
 ```
 
-Output:
 ```
-  ✓ power_user          score=1.000
-  ✓ casual_user         score=1.000
-  ✗ accessibility_user  score=0.667 — P.contrast_ratio >= RealVal(4.5)
+  ✓ lead_engineer    score=1.000
+  ✓ casual_user      score=1.000
+  ✗ ops_engineer     score=0.667 — P.p99_acceptable
 
   2/3 satisfied  (score 88.9%)
 ```
 
 ---
 
-## The three layers
+## Getting started
 
-Each layer is a separate file that communicates with the next via JSON.  
-**You write layers 1 and 2 in whatever language makes sense. We handle layer 3.**
-
-```
-Your app
-  │
-  ▼  writes ──────────────────────────────────────────────────────────
-instrumentation.js / .py / .rs / …
-  │
-  │  metrics.json
-  │  { "schema": "usersim.metrics.v1", "metrics": { ... } }
-  │
-  ▼  reads / writes ───────────────────────────────────────────────────
-perceptions.py  (or any language)
-  │
-  │  perceptions.json
-  │  { "schema": "usersim.perceptions.v1", "facts": { ... } }
-  │
-  ▼  reads ────────────────────────────────────────────────────────────
-usersim (Z3 engine)
-  │
-  ▼  writes
-results.json  +  report.html
-```
+→ **[QUICKSTART.md](QUICKSTART.md)** — build a working simulation from scratch in ~10 minutes
 
 ---
 
-### Layer 1 — Instrumentation (your app's language)
+## Key concepts
 
-Collect measurements from your application and write `metrics.json`.
+### Instrumentation (Layer 1)
 
-```js
-// instrumentation.js
-const metrics = {
-  load_time_ms:  measurePageLoad(),
-  error_count:   getErrorCount(),
-  bundle_kb:     getBundleSize() / 1024,
-};
-
-require("fs").writeFileSync("metrics.json", JSON.stringify({
-  schema:   "usersim.metrics.v1",
-  scenario: process.env.USERSIM_SCENARIO || "default",
-  metrics,
-}));
-```
-
-```python
-# instrumentation.py
-import json, time
-
-metrics = {
-    "response_time_ms": measure_response(),
-    "cache_hit_rate":   get_cache_stats()["hit_rate"],
-    "error_count":      get_error_count(),
-}
-
-json.dump({"schema": "usersim.metrics.v1", "scenario": "api_load", "metrics": metrics},
-          open("metrics.json", "w"))
-```
-
-**The only rule:** write `{ "schema": "usersim.metrics.v1", "metrics": { ... } }`.
-
----
-
-### Layer 2 — Perceptions (Python recommended, any language accepted)
-
-Translate raw numbers into what a human would perceive.
-
-```python
-# perceptions.py
-from usersim.perceptions.library import threshold, flag, in_range
-
-def compute(metrics, scenario="default", person=None):
-    return {
-        "loads_fast":      threshold(metrics, "load_time_ms",  max=300),
-        "bundle_is_small": threshold(metrics, "bundle_kb",     max=200),
-        "no_errors":       metrics.get("error_count", 0) == 0,
-        "cache_warm":      threshold(metrics, "cache_hit_rate", min=0.80),
-    }
-```
-
-**If you prefer another language**, write an executable that reads `metrics.json` from stdin and writes `perceptions.json` to stdout:
+Runs in your application's language. The only contract: write a JSON file matching the schema below. Can be a script you call in CI, a test hook, a benchmark runner — whatever fits your workflow.
 
 ```json
 {
-  "schema":   "usersim.perceptions.v1",
-  "scenario": "api_load",
-  "person":   "power_user",
-  "facts": {
-    "loads_fast":      true,
-    "bundle_is_small": false,
-    "no_errors":       true,
-    "cache_warm":      true
-  }
+  "schema":   "usersim.metrics.v1",
+  "scenario": "optional-name",
+  "metrics":  { "key": value, ... }
 }
 ```
 
-#### Built-in perception helpers
+### Perceptions (Layer 2)
+
+Translates raw numbers into meaningful boolean/numeric facts. Python is recommended — we ship a library of helpers. But this layer can be any executable that reads `metrics.json` from stdin and writes `perceptions.json` to stdout.
 
 ```python
-from usersim.perceptions.library import (
-    threshold,       # threshold(m, "key", max=500) → bool
-    in_range,        # in_range(m, "key", 10, 100) → bool
-    ratio,           # ratio(m, "numerator", "denominator") → float
-    flag,            # flag(m, "key") → bool (handles bool/int/string)
-    normalise,       # normalise(m, "key", lo=0, hi=100) → 0.0–1.0
-    percentile_rank, # percentile_rank(value, population) → 0.0–1.0
-    z_score,         # z_score(value, mean, std) → float
-)
+from usersim.perceptions.library import threshold, ratio, flag, in_range, normalise
 ```
 
----
+### Users (Layer 3)
 
-### Layer 3 — Judgement (Z3, controlled by usersim)
-
-Define who your users are and what they need:
+Each user is a Python class. The `constraints()` method returns a list of Z3 expressions. Every constraint must be satisfiable for the user to be "satisfied". Partial satisfaction is scored (fraction of passing constraints).
 
 ```python
-# users/power_user.py
-from usersim import Person
-from usersim.judgement.z3_compat import And, Implies, Or
-
-class PowerUser(Person):
-    name        = "power_user"
-    description = "Experienced developer who needs speed and reliability."
-
-    def constraints(self, P):
-        """
-        P.fact_name is a Z3 Bool/Real variable for each fact in perceptions.json.
-        Return a list of constraints — all must be satisfiable for this user
-        to be "satisfied".
-        """
-        return [
-            P.loads_fast,
-            P.no_errors,
-            Implies(P.cache_warm, P.loads_fast),   # if cache is warm, it must be fast
-        ]
+from usersim.judgement.z3_compat import And, Or, Not, Implies
 ```
-
-**Z3 expressions you can use:**
 
 | Expression | Meaning |
 |---|---|
-| `P.fact` | The fact must be true |
-| `Not(P.fact)` | The fact must be false |
-| `And(P.a, P.b)` | Both must hold |
-| `Or(P.a, P.b)` | At least one must hold |
-| `Implies(P.a, P.b)` | If a then b (vacuously true when a is false) |
-| `P.score >= RealVal(0.8)` | Numeric comparison |
+| `P.fact` | fact must be true |
+| `Not(P.fact)` | fact must be false |
+| `And(P.a, P.b)` | both must hold |
+| `Or(P.a, P.b)` | at least one must hold |
+| `Implies(P.a, P.b)` | if a then b (vacuously true when a is false) |
+| `P.score >= RealVal(0.8)` | numeric threshold |
+
+### Scenarios
+
+Run the same users against multiple scenarios (e.g. "low load" vs "peak load", "small dataset" vs "large dataset"). The matrix output shows who is satisfied under which conditions.
 
 ---
 
-## Running
+## CLI reference
 
 ```bash
-# Judge against an existing perceptions.json
+# Scaffold a new project
+usersim init [directory]
+
+# Judge: run Z3 against an existing perceptions.json
 usersim judge \
   --perceptions perceptions.json \
-  --users users/power_user.py users/casual_user.py
+  --users       users/*.py \
+  --out         results.json
 
-# Run the full pipeline (instrumentation → perceptions → judgement)
-usersim run \
-  --metrics    metrics.json \
-  --perceptions perceptions.py \
-  --users      users/*.py \
-  --out        results.json
-
-# Matrix: one perceptions.json per scenario, all persons × all scenarios
+# Judge matrix: directory of perceptions files × all users
 usersim judge \
   --perceptions-dir perceptions/ \
-  --users           users/*.py \
-  --out             results.json
+  --users           users/*.py
 
-# HTML report
+# Full pipeline: run perceptions script, then judge
+usersim run \
+  --metrics     metrics.json \
+  --perceptions perceptions.py \
+  --users       users/*.py
+
+# Generate HTML report
 usersim report --results results.json --out report.html
 ```
 
 ---
 
-## JSON schema reference
+## Example
 
-### metrics.json
-```json
-{
-  "schema":   "usersim.metrics.v1",
-  "scenario": "string (optional)",
-  "context":  { "any": "extra metadata" },
-  "metrics":  {
-    "metric_name": 123,
-    "another":     true,
-    "ratio":       0.85
-  }
-}
-```
-
-### perceptions.json
-```json
-{
-  "schema":   "usersim.perceptions.v1",
-  "scenario": "string",
-  "person":   "string (or 'all')",
-  "facts": {
-    "fact_name": true,
-    "score":     0.85
-  }
-}
-```
-
-### results.json
-```json
-{
-  "schema":   "usersim.results.v1",
-  "scenario": "string",
-  "results": [
-    {
-      "person":     "power_user",
-      "satisfied":  true,
-      "score":      1.0,
-      "violations": [],
-      "scenario":   "default"
-    }
-  ],
-  "summary": { "total": 1, "satisfied": 1, "score": 1.0 }
-}
-```
-
----
-
-## Example: graph visualization
-
-See [`examples/graph-viz/`](examples/graph-viz/) for a complete worked example measuring whether a force-directed graph layout satisfies different engineering personas (CTO, Staff Engineer, etc.).
-
-The instrumentation runs in JavaScript (measuring canvas layout metrics), the perceptions translate layout stress / blob separation / edge crossings into legibility facts, and the users express what each persona needs to make sense of the visualization.
+[`examples/graph-viz/`](examples/graph-viz/) shows usersim applied to a force-directed graph visualization. The instrumentation is JavaScript (measuring layout physics), the perceptions translate geometry into legibility facts, and two personas (CTO, Staff Engineer) express what they need to understand the graph. This is the real-world case that motivated usersim's creation.
 
 ---
 
 ## Z3 on ARM64
 
-`z3-solver` isn't packaged for all ARM64 Python versions. usersim ships a pure-Python fallback that handles all the constraint patterns above. Install `usersim[z3]` when possible; the fallback activates automatically when z3 isn't available.
-
----
-
-## Architecture
-
-```
-usersim/
-├── judgement/
-│   ├── engine.py       # Z3 evaluation loop
-│   ├── person.py       # Person base class + FactNamespace
-│   └── z3_compat.py    # Real z3 + pure-Python fallback
-├── perceptions/
-│   └── library.py      # threshold(), ratio(), flag(), etc.
-├── report/
-│   └── html.py         # Self-contained HTML report
-├── cli.py              # usersim run/judge/report/init
-├── runner.py           # Pipeline orchestrator
-├── scaffold.py         # usersim init
-└── schema.py           # JSON schema validation
-```
+`z3-solver` isn't packaged for all ARM64 Python versions (Apple Silicon, Raspberry Pi). usersim ships a pure-Python fallback that handles all the constraint patterns above. Install `usersim[z3]` when possible; the fallback activates automatically otherwise.
 
 ---
 
