@@ -1,19 +1,19 @@
 """
 Ops engineer running the processor as a scheduled batch job.
-Needs the full pipeline to complete within a tight time budget —
-they're billed by CPU time and have downstream jobs waiting.
-Fast is nice but their hard requirement is "finishes on time, no errors".
+Billed by CPU time, has downstream jobs waiting on the output.
+Cares about throughput and completion within the job window.
+Will page if error rate crosses 0.1%.
 """
 from usersim import Person
 
 
 class OpsEngineer(Person):
     name        = "ops_engineer"
-    description = "Runs batch jobs; needs the pipeline to finish within SLA, no errors."
+    description = "Batch jobs; needs pipeline to finish on time with high throughput."
 
     def constraints(self, P):
         return [
-            P.no_errors,
-            P.pipeline_under_30s,    # must finish within the job window
-            P.sort_finishes_in_time, # sort must not time out
+            P.error_rate      <= 0.001,     # pages at 0.1% error rate
+            P.total_ms        <= 30_000,    # job window is 30s
+            P.sort_throughput >= 100,       # at least 100 records/ms sorted
         ]

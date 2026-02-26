@@ -100,28 +100,38 @@ json.dump({
 
 ## 4. Write the perceptions
 
-Perceptions translate raw numbers into what a human would *perceive*. Replace `perceptions.py`:
+A domain expert looks at the raw metrics and extracts meaningful observations.
+**Perceptions should mostly be numeric** — pass values through or derive rates and
+ratios. Thresholds ("is 400ms fast enough?") differ per user and belong in step 5.
+
+Replace `perceptions.py`:
 
 ```python
-from usersim.perceptions.library import threshold
-
 def compute(metrics: dict, **_) -> dict:
     return {
-        "feels_fast":      threshold(metrics, "response_ms",  max=200),
-        "p99_acceptable":  threshold(metrics, "p99_ms",       max=500),
-        "no_errors":       threshold(metrics, "error_rate",   max=0.01),
-        "high_uptime":     threshold(metrics, "uptime_pct",   min=99.9),
-        "cache_is_warm":   threshold(metrics, "cache_hit",    min=0.80),
+        # Raw timing — pass through; each user decides what's "too slow"
+        "response_ms": metrics.get("response_ms", 0.0),
+        "p99_ms":      metrics.get("p99_ms", 0.0),
+
+        # Rates and scores — pass through or derive
+        "error_rate":  metrics.get("error_rate", 0.0),
+        "uptime_pct":  metrics.get("uptime_pct", 100.0),
+        "cache_hit":   metrics.get("cache_hit", 0.0),
     }
 ```
 
-usersim detects the `compute()` function and calls it directly — no subprocess, no piping needed on your end.
+usersim detects `compute()` and calls it in-process — no subprocess needed.
+
+> Booleans are fine for *definitional* facts: "did the job complete?", "is the
+> feature enabled?". Avoid booleans for continuous values where users disagree
+> on what counts as acceptable.
 
 ---
 
 ## 5. Define your users
 
-Each user is a Python file with a class that extends `Person`.
+Each user applies their own thresholds to the numeric perceptions.
+Plain comparison operators work — no special Z3 imports needed for simple cases.
 
 Create `users/power_user.py`:
 
@@ -134,10 +144,10 @@ class PowerUser(Person):
 
     def constraints(self, P):
         return [
-            P.feels_fast,
-            P.p99_acceptable,
-            P.no_errors,
-            P.cache_is_warm,
+            P.response_ms <= 100,    # wants sub-100ms
+            P.p99_ms      <= 300,
+            P.error_rate  <= 0.001,
+            P.cache_hit   >= 0.90,
         ]
 ```
 
@@ -152,8 +162,8 @@ class CasualUser(Person):
 
     def constraints(self, P):
         return [
-            P.no_errors,
-            P.high_uptime,
+            P.response_ms <= 3_000,  # barely notices a 3s wait
+            P.error_rate  <= 0.05,
         ]
 ```
 
@@ -169,15 +179,20 @@ class OpsEngineer(Person):
 
     def constraints(self, P):
         return [
-            P.high_uptime,
-            P.no_errors,
-            Implies(P.cache_is_warm, P.feels_fast),
-            P.p99_acceptable,
+            P.uptime_pct  >= 99.9,
+            P.error_rate  <= 0.01,
+            P.p99_ms      <= 500,
+            # If cache is warm, response must be fast (cache should help)
+            Implies(P.cache_hit >= 0.80, P.response_ms <= 200),
         ]
 ```
 
-> **`Implies(A, B)`** means "if A is true, B must also be true." When A is false,
-> the constraint is vacuously satisfied — useful for conditional requirements.
+> **`Implies(A, B)`** means "if A holds, B must also hold." When A is false the
+> constraint is vacuously satisfied — useful for conditional requirements.
+>
+> **Different users, different thresholds** — that's the point. The power user
+> needs sub-100ms; the casual user is fine with 3s. Both use the same
+> `response_ms` perception but express their own opinion in constraints.
 
 ---
 
@@ -203,16 +218,16 @@ Results are saved to `results.json` and a human-readable report to `report.html`
 
 ## 7. Break something and see who notices
 
-Edit `instrumentation.py` to simulate a degraded API:
+Edit `instrumentation.py` — return hardcoded values to simulate a degraded API:
 
 ```python
 def measure():
     return {
-        "response_ms": 480,
-        "error_rate":  0.05,
-        "uptime_pct":  99.95,
-        "p99_ms":      950,
-        "cache_hit":   0.60,
+        "response_ms":    480,
+        "p99_ms":         950,
+        "error_rate":     0.05,   # 5% error rate
+        "uptime_pct":     99.95,
+        "cache_hit":      0.60,
     }
 ```
 
@@ -223,14 +238,16 @@ usersim run
 ```
 
 ```
-  ✗ power_user      score=0.000 — ...
-  ✗ casual_user     score=0.500 — ...
-  ✗ ops_engineer    score=0.250 — ...
+  ✗ power_user      score=0.000
+  ✓ casual_user     score=1.000
+  ✗ ops_engineer    score=0.500
 
-  0/3 satisfied  (score 25.0%)
+  1/3 satisfied  (score 33.3%)
 ```
 
-Different users, different pain points — this is what user simulation tells you that a test suite can't.
+Notice that the **casual user is satisfied** — 480ms is under their 3s threshold, and 5%
+errors is at the edge of their tolerance. The power user and ops engineer fail on
+completely different constraints. This is what user simulation tells you that a test suite can't.
 
 ---
 

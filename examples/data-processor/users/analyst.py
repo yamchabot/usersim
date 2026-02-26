@@ -1,8 +1,8 @@
 """
-Analyst running ad-hoc queries on medium-sized datasets.
-Doesn't need instant responses, but the full pipeline must finish
-within 30 seconds — they're watching it run and will give up otherwise.
-Correctness is non-negotiable.
+Analyst running ad-hoc queries on medium-to-large datasets.
+Doesn't need instant responses — they fire off a query and context-switch.
+But the full pipeline must finish within 30 seconds, and results must
+be correct.  Tolerates a tiny error rate.
 """
 from usersim import Person
 from usersim.judgement.z3_compat import Implies
@@ -10,13 +10,13 @@ from usersim.judgement.z3_compat import Implies
 
 class Analyst(Person):
     name        = "analyst"
-    description = "Runs queries on datasets; tolerates some latency but needs correctness."
+    description = "Batch queries; tolerates latency, needs correctness and completion."
 
     def constraints(self, P):
         return [
-            P.no_errors,
-            P.pipeline_under_30s,      # full pipeline must finish
-            P.search_returns_results,  # correctness: search must work
-            # For large datasets, at least summarise should still be reasonable
-            Implies(P.sort_finishes_in_time, P.summary_is_acceptable),
+            P.error_rate  <= 0.01,      # tolerates up to 1% errors
+            P.total_ms    <= 30_000,    # full pipeline must finish in 30s
+            P.search_returned_results,  # correctness: search must find results
+            # If sort completes in time, summary should too (paired operations)
+            Implies(P.sort_ms <= 10_000, P.summary_ms <= 5_000),
         ]

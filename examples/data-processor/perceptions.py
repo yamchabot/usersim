@@ -1,37 +1,31 @@
 """
-perceptions.py — what does a human perceive about this processor?
+perceptions.py — what can a domain expert observe about this processor?
 
-Translates raw timing numbers into meaningful facts about the experience.
-Thresholds are based on common UX research guidelines:
-  <100ms  → feels instant
-  <1000ms → noticeable but acceptable for most tasks
-  <10s    → tolerable for batch operations
+Returns numeric values wherever possible.  Thresholds ("is this fast enough?")
+belong in user constraint files — different users have different tolerances.
 """
-from usersim.perceptions.library import threshold
+from usersim.perceptions.library import throughput
 
 
 def compute(metrics: dict, **_) -> dict:
+    n      = max(metrics.get("record_count", 1), 1)
+    errors = metrics.get("error_count", 0)
+
     return {
-        # Sort speed — sorting is the most common operation
-        "sort_feels_instant":    threshold(metrics, "sort_ms",    max=100),
-        "sort_is_acceptable":    threshold(metrics, "sort_ms",    max=1_000),
-        "sort_finishes_in_time": threshold(metrics, "sort_ms",    max=10_000),
+        # ── Timing (ms) — users apply their own thresholds ────────────────
+        "sort_ms":    metrics.get("sort_ms",    0.0),
+        "search_ms":  metrics.get("search_ms",  0.0),
+        "summary_ms": metrics.get("summary_ms", 0.0),
+        "total_ms":   metrics.get("total_ms",   0.0),
 
-        # Search speed — interactive queries need a fast response
-        "search_feels_instant":  threshold(metrics, "search_ms",  max=100),
-        "search_is_acceptable":  threshold(metrics, "search_ms",  max=2_000),
+        # ── Dataset size ──────────────────────────────────────────────────
+        "record_count": n,
 
-        # Summary/aggregate speed — typically less latency-sensitive
-        "summary_is_fast":       threshold(metrics, "summary_ms", max=500),
-        "summary_is_acceptable": threshold(metrics, "summary_ms", max=5_000),
+        # ── Derived rates ─────────────────────────────────────────────────
+        "error_rate":       errors / n,                       # fraction of records with errors
+        "sort_throughput":  n / max(metrics.get("sort_ms", 1.0), 0.001),  # records per ms
 
-        # End-to-end: full pipeline within a time budget
-        "pipeline_under_1s":     threshold(metrics, "total_ms",   max=1_000),
-        "pipeline_under_30s":    threshold(metrics, "total_ms",   max=30_000),
-
-        # Correctness: search must return results when they exist
-        "search_returns_results": metrics.get("search_hits", 0) > 0,
-
-        # Reliability
-        "no_errors": metrics.get("error_count", 0) == 0,
+        # ── Definitional boolean: did the search find anything? ───────────
+        # This is categorical — the search either returned results or it didn't.
+        "search_returned_results": metrics.get("search_hits", 0) > 0,
     }

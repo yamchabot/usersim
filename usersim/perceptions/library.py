@@ -1,93 +1,79 @@
 """
-Default perception library.
+Perception library.
 
-These are pure functions: (metrics_dict → bool/float).
-Use them in your perceptions.py to turn raw metrics into human-meaningful facts.
+Use these in perceptions.py to derive human-meaningful observations from
+raw instrumentation metrics.
 
-All functions take the 'metrics' dict from metrics.json as their first argument.
-They are intentionally simple — most are just named thresholds so that your
-perceptions.py reads like a specification, not an algorithm.
+DESIGN PRINCIPLE
+────────────────
+Perceptions answer: "What can a domain expert observe about the system?"
+They should mostly be *numeric* — pass the measured values through, possibly
+transformed into more meaningful units (rate, throughput, normalised score).
 
-Example
--------
-from usersim.perceptions.library import threshold, ratio, in_range
+Thresholds — "is this fast enough?" "is the error rate acceptable?" — are
+judgements that belong in user constraint files, not here.  Different users
+have different tolerances.  Let Z3 enforce those in users/*.py:
 
-facts = {
-    "loads_fast":        threshold(m, "load_time_ms", max=500),
-    "low_error_rate":    threshold(m, "error_rate",   max=0.01),
-    "good_cache_hit":    threshold(m, "cache_hit_pct", min=0.80),
-    "acceptable_size":   in_range(m,  "bundle_kb",    0, 250),
-    "cpu_utilisation":   ratio(m,     "cpu_used", "cpu_total"),
-}
+    # perceptions.py — ✓ correct
+    def compute(metrics, **_):
+        return {
+            "response_ms": metrics["response_ms"],   # numeric
+            "error_rate":  metrics["error_count"] / metrics["total"],
+        }
+
+    # users/power_user.py — thresholds live here
+    def constraints(self, P):
+        return [
+            P.response_ms <= 100,   # power user wants instant
+            P.error_rate  <= 0.001,
+        ]
+
+    # users/casual_user.py — different thresholds
+    def constraints(self, P):
+        return [
+            P.response_ms <= 2000,  # casual user barely notices 2s
+            P.error_rate  <= 0.05,
+        ]
+
+Boolean perceptions are fine for *definitional* facts — things that are
+categorically true or false regardless of who is asking:
+
+    "has_results":    search_hits > 0          # either found something or didn't
+    "is_multi_node":  node_count > 1           # objective topology fact
+
+Avoid booleans for continuous values where people disagree on the cutoff.
 """
 from __future__ import annotations
+import math
 
 
-# ── Boolean thresholds ─────────────────────────────────────────────────────────
+# ── Numeric passthrough & derivation ──────────────────────────────────────────
+# These are the primary helpers.  Perceptions should mostly use these.
 
-def threshold(
-    metrics: dict,
-    key: str,
-    *,
-    min: float | None = None,
-    max: float | None = None,
-    default: bool = False,
-) -> bool:
-    """
-    True if metrics[key] satisfies the min/max bounds.
-
-    threshold(m, "load_ms", max=500)   → True when load_ms ≤ 500
-    threshold(m, "score",   min=0.7)   → True when score ≥ 0.7
-    """
-    val = metrics.get(key)
-    if val is None:
-        return default
-    if min is not None and val < min:
-        return False
-    if max is not None and val > max:
-        return False
-    return True
+def get(metrics: dict, key: str, default: float = 0.0):
+    """Return metrics[key] unchanged.  Use for raw passthrough."""
+    return metrics.get(key, default)
 
 
-def in_range(metrics: dict, key: str, lo: float, hi: float, default: bool = False) -> bool:
-    """True if lo ≤ metrics[key] ≤ hi."""
-    val = metrics.get(key)
-    if val is None:
-        return default
-    return lo <= val <= hi
+def rate(metrics: dict, count_key: str, total_key: str, default: float = 0.0) -> float:
+    """Fraction: metrics[count_key] / metrics[total_key].  Safe division."""
+    n = metrics.get(count_key, 0)
+    d = metrics.get(total_key, 0)
+    return n / d if d else default
 
-
-def equals(metrics: dict, key: str, value, default: bool = False) -> bool:
-    """True if metrics[key] == value."""
-    val = metrics.get(key)
-    if val is None:
-        return default
-    return val == value
-
-
-def flag(metrics: dict, key: str, default: bool = False) -> bool:
-    """True if metrics[key] is truthy."""
-    val = metrics.get(key)
-    if val is None:
-        return default
-    if isinstance(val, bool):
-        return val
-    if isinstance(val, (int, float)):
-        return bool(val)
-    if isinstance(val, str):
-        return val.lower() in ("true", "yes", "1")
-    return bool(val)
-
-
-# ── Numeric extractions ────────────────────────────────────────────────────────
 
 def ratio(metrics: dict, numerator: str, denominator: str, default: float = 0.0) -> float:
-    """metrics[numerator] / metrics[denominator], or default if denominator is 0."""
+    """Ratio of two metric values.  Safe division."""
     n = metrics.get(numerator, 0)
     d = metrics.get(denominator, 0)
-    if not d:
-        return default
-    return n / d
+    return n / d if d else default
+
+
+def throughput(metrics: dict, count_key: str, time_key: str, default: float = 0.0) -> float:
+    """Items per unit time: metrics[count_key] / metrics[time_key]."""
+    n = metrics.get(count_key, 0)
+    t = metrics.get(time_key, 0)
+    return n / t if t else default
 
 
 def normalise(metrics: dict, key: str, lo: float, hi: float, default: float = 0.5) -> float:
@@ -100,25 +86,40 @@ def normalise(metrics: dict, key: str, lo: float, hi: float, default: float = 0.
     return max(0.0, min(1.0, (val - lo) / (hi - lo)))
 
 
-def get(metrics: dict, key: str, default=None):
-    """Plain passthrough — for when you just want the raw metric value."""
-    return metrics.get(key, default)
+def delta(metrics: dict, key: str, baseline: float, default: float = 0.0) -> float:
+    """Signed difference: metrics[key] - baseline."""
+    val = metrics.get(key)
+    return (val - baseline) if val is not None else default
+
+
+def change_pct(metrics: dict, key: str, baseline: float, default: float = 0.0) -> float:
+    """Percentage change relative to baseline: (val - baseline) / baseline * 100."""
+    val = metrics.get(key)
+    if val is None or baseline == 0:
+        return default
+    return (val - baseline) / baseline * 100.0
+
+
+def log_scale(metrics: dict, key: str, base: float = 10.0, default: float = 0.0) -> float:
+    """log_base(metrics[key]).  Useful for highly skewed distributions."""
+    val = metrics.get(key)
+    if val is None or val <= 0:
+        return default
+    return math.log(val, base)
 
 
 # ── Statistical helpers ────────────────────────────────────────────────────────
+
+def z_score(value: float, mean: float, std: float) -> float:
+    """Standard score.  Returns 0.0 when std == 0."""
+    return (value - mean) / std if std else 0.0
+
 
 def percentile_rank(value: float, population: list[float]) -> float:
     """Fraction of population values ≤ value.  Returns 0.0–1.0."""
     if not population:
         return 0.0
     return sum(1 for v in population if v <= value) / len(population)
-
-
-def z_score(value: float, mean: float, std: float) -> float:
-    """Standard score.  Returns 0.0 when std==0."""
-    if std == 0:
-        return 0.0
-    return (value - mean) / std
 
 
 def moving_average(values: list[float], window: int = 5) -> float:
@@ -128,23 +129,71 @@ def moving_average(values: list[float], window: int = 5) -> float:
     return sum(values[-window:]) / min(len(values), window)
 
 
-# ── Convenience wrappers for common patterns ───────────────────────────────────
+# ── Definitional booleans ──────────────────────────────────────────────────────
+# Use these only for facts that are categorically true/false for everyone.
+# If different users could reasonably disagree, use a numeric value instead
+# and let them apply their own threshold in constraints().
 
-def is_fast(metrics: dict, key: str, *, excellent_ms=100, acceptable_ms=500) -> bool:
-    """True if metrics[key] (ms) is within acceptable_ms."""
-    return threshold(metrics, key, max=acceptable_ms)
+def flag(metrics: dict, key: str, default: bool = False) -> bool:
+    """
+    True if metrics[key] is truthy.
+
+    Use for categorical facts: a feature is enabled or it isn't,
+    a job completed or it didn't, a connection exists or it doesn't.
+    """
+    val = metrics.get(key)
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        return val.lower() in ("true", "yes", "1")
+    return bool(val)
 
 
-def is_small(metrics: dict, key: str, *, max_kb=500) -> bool:
-    """True if metrics[key] (kb) is within max_kb."""
-    return threshold(metrics, key, max=max_kb)
+def equals(metrics: dict, key: str, value, default: bool = False) -> bool:
+    """True if metrics[key] == value.  Use for exact categorical matches."""
+    val = metrics.get(key)
+    return (val == value) if val is not None else default
 
 
-def has_no_errors(metrics: dict, key: str = "error_count") -> bool:
-    """True if error count is 0."""
-    return metrics.get(key, 0) == 0
+# ── Compatibility — threshold helpers ─────────────────────────────────────────
+# Kept for cases where a boolean perception is definitionally obvious
+# (e.g. module_count >= 2 → is_multi_module).  Avoid using these to encode
+# performance thresholds — those belong in user constraint files.
+
+def threshold(
+    metrics: dict,
+    key: str,
+    *,
+    min: float | None = None,
+    max: float | None = None,
+    default: bool = False,
+) -> bool:
+    """
+    True if metrics[key] satisfies the min/max bounds.
+
+    Appropriate for definitionally-boolean facts:
+        "is_multi_module": threshold(m, "module_count", min=2)
+
+    NOT appropriate for performance judgements like "is_fast" or "has_low_errors"
+    — those thresholds differ per user and belong in user constraint files.
+    """
+    val = metrics.get(key)
+    if val is None:
+        return default
+    if min is not None and val < min:
+        return False
+    if max is not None and val > max:
+        return False
+    return True
 
 
-def above_threshold(metrics: dict, key: str, pct: float) -> bool:
-    """True if metrics[key] ≥ pct (for rates / percentages expressed as 0–1)."""
-    return threshold(metrics, key, min=pct)
+def in_range(metrics: dict, key: str, lo: float, hi: float, default: bool = False) -> bool:
+    """True if lo ≤ metrics[key] ≤ hi.  Same caveats as threshold()."""
+    val = metrics.get(key)
+    if val is None:
+        return default
+    return lo <= val <= hi

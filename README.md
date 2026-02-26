@@ -168,44 +168,61 @@ metrics  = measure_for_scenario(scenario)
 
 ### Perceptions (Layer 2)
 
-Translates raw numbers into human-meaningful facts. Python files with a `compute()` function are called in-process (faster). Any other executable is spawned with metrics JSON on stdin:
+A domain expert translates raw metrics into observable quantities. **Mostly numeric** — pass values through, compute rates and ratios. Avoid encoding thresholds here: different users have different tolerances, and those live in user constraint files.
 
 ```python
-from usersim.perceptions.library import threshold, ratio, flag, in_range, normalise
+from usersim.perceptions.library import rate, throughput
 
-def compute(metrics: dict, scenario: str = "default", **kwargs) -> dict:
+def compute(metrics: dict, **_) -> dict:
     return {
-        "feels_fast":  threshold(metrics, "response_ms", max=200),
-        "no_errors":   threshold(metrics, "error_rate",  max=0.01),
+        # Numeric — pass through or derive; users apply their own thresholds
+        "response_ms":  metrics["response_ms"],
+        "error_rate":   metrics["error_count"] / max(metrics["total_requests"], 1),
+        "throughput":   throughput(metrics, "requests", "duration_ms"),
+
+        # Definitional boolean — categorical, not a threshold judgement
+        "returned_results": metrics.get("result_count", 0) > 0,
     }
 ```
 
 ### Users (Layer 3)
 
-Each user is a Python class. `constraints()` returns a list of Z3 expressions:
+Each user applies their own thresholds to the numeric perceptions via Z3 constraints. Plain Python comparison operators work — no special imports needed for simple cases:
 
 ```python
 from usersim import Person
 from usersim.judgement.z3_compat import Implies
 
-class OpsEngineer(Person):
-    name = "ops_engineer"
+class PowerUser(Person):
+    name = "power_user"
 
     def constraints(self, P):
         return [
-            P.no_errors,
-            P.high_uptime,
-            Implies(P.cache_is_warm, P.feels_fast),
+            P.response_ms  <= 100,   # power user wants sub-100ms
+            P.error_rate   <= 0.001,
+            P.returned_results,
+        ]
+
+class CasualUser(Person):
+    name = "casual_user"
+
+    def constraints(self, P):
+        return [
+            P.response_ms  <= 3_000,  # barely notices a 3s wait
+            P.error_rate   <= 0.05,
         ]
 ```
 
+The same perceptions, different thresholds. That's the point.
+
 | Expression | Meaning |
 |---|---|
-| `P.fact` | fact must be true |
-| `Not(P.fact)` | fact must be false |
+| `P.value <= 200` | numeric threshold |
+| `P.value >= 0.8` | numeric lower bound |
+| `P.flag` | boolean fact must be true |
+| `Not(P.flag)` | boolean fact must be false |
 | `Implies(P.a, P.b)` | if a then b |
 | `And(P.a, P.b)` | both must hold |
-| `Or(P.a, P.b)` | at least one must hold |
 
 ---
 
