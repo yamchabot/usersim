@@ -1,0 +1,27 @@
+[build-system]
+requires      = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name        = "usersim"
+version     = "0.1.0"
+description = "User simulation framework — measure satisfaction across simulated personas using Z3"
+readme      = "README.md"
+license     = { text = "MIT" }
+requires-python = ">=3.10"
+
+dependencies = []  # z3-solver is optional; we ship a pure-Python fallback
+
+[project.optional-dependencies]
+z3      = ["z3-solver>=4.12"]
+dev     = ["pytest>=7", "z3-solver>=4.12"]
+
+[project.scripts]
+usersim = "usersim.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["usersim*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "examples"]

@@ -1,0 +1,22 @@
+name: graph-viz-example
+version: 1
+
+instrumentation:
+  command: "node instrumentation.js {scenario}"
+  output:  metrics.json
+
+perceptions:
+  script: perceptions.py
+
+users:
+  - users/cto.py
+  - users/staff_engineer.py
+
+scenarios:
+  - name: small_single_module
+  - name: five_modules_gateway
+  - name: spaghetti_large
+
+output:
+  results: results.json
+  report:  report.html
