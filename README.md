@@ -233,10 +233,10 @@ usersim report --results results.json       # from a file
 
 ## Example
 
-[`examples/graph-viz/`](examples/graph-viz/) shows usersim applied to a force-directed graph visualization. Instrumentation is JavaScript (synthetic layout metrics), perceptions translate geometry into legibility facts, and two personas evaluate three scenarios. Run it with:
+[`examples/data-processor/`](examples/data-processor/) is a complete working example. It tests a simple in-memory data processor (sort, search, summarise) across three dataset sizes with three user personas (developer, analyst, ops engineer). All measurements are real — instrumentation runs the actual code and records wall-clock timing.
 
 ```bash
-cd examples/graph-viz
+cd examples/data-processor
 usersim run
 ```
 

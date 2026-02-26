@@ -317,5 +317,5 @@ instrumentation: "./measure.sh"
 ## Reference
 
 - [README.md](README.md) — architecture overview and full CLI reference
-- [`examples/graph-viz/`](examples/graph-viz/) — real-world example (JavaScript instrumentation)
+- [`examples/data-processor/`](examples/data-processor/) — complete working example with real measurements
 - [`usersim/perceptions/library.py`](usersim/perceptions/library.py) — perception helper reference
