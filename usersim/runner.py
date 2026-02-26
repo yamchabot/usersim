@@ -220,9 +220,15 @@ def _run_command(
     Run a shell command, passing stdin_data (if any) on stdin.
     Expects JSON on stdout.  Raises on non-zero exit.
     """
+    # Add base_dir to PYTHONPATH so subprocess scripts can import app code
+    # that lives in the project root (e.g. instrumentation.py imports processor.py)
+    existing_pythonpath = os.environ.get("PYTHONPATH", "")
+    pythonpath = str(base_dir) if not existing_pythonpath else f"{base_dir}:{existing_pythonpath}"
+
     env = {
         **os.environ,
         "USERSIM_SCENARIO": scenario,
+        "PYTHONPATH": pythonpath,
     }
     result = subprocess.run(
         cmd,

@@ -105,21 +105,25 @@ _CONFIG_YAML = '''\
 #
 # Run the full simulation pipeline with: usersim run
 # Add that to your Makefile, npm scripts, pyproject.toml, Bazel, etc.
+#
+# Simulation files live in usersim/ to keep them separate from your app.
+# Commands run from the project root, so instrumentation.py can import
+# your application code directly.
 version: 1
 
 # Shell command to collect metrics from your app (any language).
-# usersim runs this and reads metrics JSON from its stdout.
+# Reads nothing; writes metrics JSON to stdout.
 # USERSIM_SCENARIO env var is set to the current scenario name.
 instrumentation: "python3 instrumentation.py"
 
-# Shell command (or Python file) to translate metrics into perceptions.
+# Shell command (or Python file with compute()) for perceptions.
 # Reads metrics JSON from stdin, writes perceptions JSON to stdout.
 # Python files with a compute() function are called in-process (faster).
-perceptions: "python3 perceptions.py"
+perceptions: "python3 usersim/perceptions.py"
 
 # User persona files.  Glob patterns supported.
 users:
-  - users/*.py
+  - usersim/users/*.py
 
 # Scenarios to run.  Each triggers one instrumentation + perceptions call.
 # Use USERSIM_SCENARIO in your instrumentation to vary the conditions.
@@ -128,13 +132,13 @@ scenarios:
 
 # Optional: where to save output.  Remove to write to stdout only.
 output:
-  results: results.json
-  report:  report.html
+  results: usersim/results.json
+  report:  usersim/report.html
 '''
 
 _GITIGNORE = '''\
-results.json
-report.html
+usersim/results.json
+usersim/report.html
 __pycache__/
 *.pyc
 .usersim_cache/
@@ -142,16 +146,17 @@ __pycache__/
 
 
 def init_project(target: Path) -> None:
-    target = target.resolve()
-    users_dir = target / "users"
+    target   = target.resolve()
+    sim_dir  = target / "usersim"
+    users_dir = sim_dir / "users"
     users_dir.mkdir(parents=True, exist_ok=True)
 
     files = {
-        target / "usersim.yaml":           _CONFIG_YAML,
-        target / "instrumentation.py":     _INSTRUMENTATION_PY,
-        target / "perceptions.py":         _PERCEPTIONS_PY,
-        users_dir / "example_user.py":     _USER_PY,
-        target / ".gitignore":             _GITIGNORE,
+        target   / "usersim.yaml":           _CONFIG_YAML,
+        target   / "instrumentation.py":     _INSTRUMENTATION_PY,
+        sim_dir  / "perceptions.py":         _PERCEPTIONS_PY,
+        users_dir / "example_user.py":       _USER_PY,
+        target   / ".gitignore":             _GITIGNORE,
     }
 
     created = []
@@ -170,20 +175,25 @@ def init_project(target: Path) -> None:
         print(f"  skipped  {f}  (already exists)")
 
     print(f"""
+Layout:
+
+  instrumentation.py       ← measures your app; lives at project root
+  usersim/perceptions.py   ← translates metrics → domain observations
+  usersim/users/*.py       ← simulated user personas
+  usersim.yaml             ← pipeline config
+
 Next steps:
 
-  1. Edit  instrumentation.py  to collect real metrics from your app.
-     Write metrics JSON to stdout.  USERSIM_SCENARIO is set in env.
+  1. Edit  instrumentation.py  — replace the stub with real measurements.
+     Write metrics JSON to stdout.  USERSIM_SCENARIO env var is set.
 
-  2. Edit  perceptions.py  to translate metrics → human-readable facts.
-     Each fact is a bool or float that your user personas reason about.
+  2. Edit  usersim/perceptions.py  — return numeric domain observations.
+     Different users will apply their own thresholds in step 3.
 
-  3. Edit  users/example_user.py  (or add more files, one per persona).
+  3. Edit  usersim/users/example_user.py  — add Z3 numeric constraints.
+     Add more user files (one per persona) as needed.
 
-  4. Run the full pipeline:
-
-       usersim run
+  4. Run:  usersim run
 
   Add `usersim run` to your Makefile, package.json, or CI pipeline.
-  It reads usersim.yaml and handles the rest automatically.
 """)

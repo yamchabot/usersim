@@ -2,16 +2,31 @@
 
 A complete usersim setup for a simple in-memory data processor.
 
+## Layout
+
+```
+data-processor/
+├── processor.py        ← the application being tested
+├── usersim.yaml        ← pipeline config (run usersim run from here)
+└── usersim/            ← all simulation files in one place
+    ├── instrumentation.py
+    ├── perceptions.py
+    └── users/
+        ├── developer.py
+        ├── analyst.py
+        └── ops_engineer.py
+```
+
 ## What's here
 
 | File | Purpose |
 |---|---|
-| `processor.py` | The application being tested — sort, search, summarise |
-| `instrumentation.py` | Runs the processor and records real wall-clock timing |
-| `perceptions.py` | Translates timing into human-meaningful facts |
-| `users/developer.py` | Interactive user; needs operations to feel responsive |
-| `users/analyst.py` | Runs ad-hoc queries; tolerates latency, needs correctness |
-| `users/ops_engineer.py` | Batch jobs; needs the pipeline to finish within SLA |
+| `processor.py` | The application — sort, search, summarise records |
+| `usersim/instrumentation.py` | Runs the processor and records real wall-clock timing |
+| `usersim/perceptions.py` | Translates timing into numeric domain observations |
+| `usersim/users/developer.py` | Interactive use; needs operations to feel responsive |
+| `usersim/users/analyst.py` | Ad-hoc queries; tolerates latency, needs correctness |
+| `usersim/users/ops_engineer.py` | Batch jobs; needs pipeline to finish within SLA |
 | `usersim.yaml` | Pipeline config — scenarios, commands, output paths |
 
 ## Run it
@@ -22,17 +37,23 @@ usersim run
 
 Three scenarios (`small`, `medium`, `large`) × three users. All measurements are real — instrumentation.py calls processor.py and records actual timing.
 
+## Test the pipeline manually
+
+```bash
+python3 usersim/instrumentation.py | python3 usersim/perceptions.py | python3 -m json.tool
+```
+
 ## Scenarios
 
 | Scenario | Dataset size | Expected experience |
 |---|---|---|
-| `small`  | 500 records    | Instant for everyone |
-| `medium` | 10 000 records | Acceptable for all; fast for ops/analyst |
-| `large`  | 100 000 records | Slow for interactive use; fine for batch |
+| `small`  | 500 records     | Instant for everyone |
+| `medium` | 10 000 records  | Acceptable for all |
+| `large`  | 100 000 records | Batch territory; ops and analyst are fine |
 
 ## What to change
 
 - **`processor.py`** — replace with your own application code
-- **`instrumentation.py`** — measure the operations your users actually run
-- **`perceptions.py`** — tune thresholds to match your users' expectations
-- **`users/*.py`** — express what each persona actually needs
+- **`usersim/instrumentation.py`** — measure the operations your users actually run
+- **`usersim/perceptions.py`** — extract numeric domain observations
+- **`usersim/users/*.py`** — express what each persona actually needs with Z3 constraints

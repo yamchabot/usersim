@@ -16,6 +16,10 @@ import statistics
 import sys
 import time
 
+# Add the project root to sys.path so processor.py is importable
+# whether this script is run by usersim (via PYTHONPATH) or directly.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from processor import sort_records, search_records, summarise
 
 # ── Dataset sizes per scenario ────────────────────────────────────────────────

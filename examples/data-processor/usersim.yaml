@@ -1,25 +1,23 @@
 # usersim.yaml — data-processor example
 #
-# Run: usersim run
+# Run from the project root: usersim run
 #
-# Tests three simulated users against a simple in-memory data processor
-# across three dataset sizes.  All measurements are real — instrumentation
-# runs the actual processor and records wall-clock timing.
+# Simulation files live in usersim/ to keep them separate from the app.
+# Commands run from the project root, so instrumentation.py can import
+# processor.py directly.
 version: 1
 
-instrumentation: "python3 instrumentation.py"
-perceptions: "python3 perceptions.py"
+instrumentation: "python3 usersim/instrumentation.py"
+perceptions: "python3 usersim/perceptions.py"
 
 users:
-  - users/*.py
+  - usersim/users/*.py
 
-# Each scenario sets USERSIM_SCENARIO, which instrumentation.py uses
-# to pick the dataset size.
 scenarios:
   - small    # 500 records  — should feel instant
   - medium   # 10 000 records — noticeable but acceptable
   - large    # 100 000 records — batch territory
 
 output:
-  results: results.json
-  report:  report.html
+  results: usersim/results.json
+  report:  usersim/report.html
