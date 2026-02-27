@@ -70,6 +70,13 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         card_cls = "all-pass" if all_ok else "some-fail"
         badge_cls = "badge-all" if all_ok else "badge-some"
 
+        constraints_html = "".join(
+            '<div class="constraint{}">{}</div>'.format(
+                " implies" if c.lower().startswith("if ") else "", c
+            )
+            for c in constraints
+        )
+
         # Dot grid
         dots = ""
         for si, scenario in enumerate(scenarios):
@@ -98,10 +105,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   <div class="constraints-panel">
     <div class="goal-text">{goal}</div>
     <div class="constraints">
-      {"".join(
-          f'<div class="constraint{\' implies\' if c.lower().startswith(\'if \') else \'\'}">{c}</div>'
-          for c in constraints
-      )}
+      {constraints_html}
     </div>
   </div>
 
