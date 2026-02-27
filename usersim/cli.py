@@ -52,6 +52,7 @@ def cmd_run(args):
 
     if not args.quiet:
         _print_summary(results, file=sys.stderr)
+        _print_narrative(results, file=sys.stdout)
 
     return 0 if results["summary"]["score"] == 1.0 else 1
 
@@ -144,6 +145,90 @@ def _print_summary(results: dict, file=sys.stderr) -> None:
             print(f"  {sym} {r['person']:20} score={r['score']:.3f}{viol}", file=file)
 
     print(f"\n  {satisfied}/{total} satisfied  (score {score:.1%})\n", file=file)
+
+
+def _print_narrative(results: dict, file=sys.stdout) -> None:
+    """
+    LLM-readable narrative output — one block per unsatisfied person.
+
+    Format is designed to be unambiguous for AI coding agents:
+    each block explains who is unhappy, what they want, which constraints
+    failed, and in which scenarios — so the agent knows exactly what to fix.
+    """
+    all_results = results.get("results", [])
+    schema      = results.get("schema", "")
+
+    # Collect person metadata and group results by person
+    persons_seen = []
+    by_person: dict[str, list[dict]] = {}
+    for r in all_results:
+        p = r["person"]
+        if p not in by_person:
+            persons_seen.append(p)
+            by_person[p] = []
+        by_person[p].append(r)
+
+    any_failure = any(
+        not r["satisfied"]
+        for rlist in by_person.values()
+        for r in rlist
+    )
+
+    if not any_failure:
+        total = results.get("summary", {}).get("total", 0)
+        print(f"\nALL CHECKS PASSED ({total} person×scenario checks satisfied).\n", file=file)
+        return
+
+    print("\n" + "=" * 60, file=file)
+    print("USER SIMULATION — FAILURES", file=file)
+    print("=" * 60, file=file)
+    print("The following users are unsatisfied with the current layout.", file=file)
+    print("Fix the indicated constraints to make them happy.\n", file=file)
+
+    for person_name in persons_seen:
+        person_results = by_person[person_name]
+        failing = [r for r in person_results if not r["satisfied"]]
+
+        if not failing:
+            continue
+
+        # Pull metadata from first result
+        first   = person_results[0]
+        role    = first.get("role", "")
+        goal    = first.get("goal", "")
+        pronoun = first.get("pronoun", "they")
+        pro     = pronoun
+        Pro     = pro.capitalize()
+        sv      = "" if pro == "they" else "s"
+
+        # Deduplicate violations across scenarios
+        seen_viols: set[str] = set()
+        violations: list[str] = []
+        for r in failing:
+            for v in r.get("violations", []):
+                if v not in seen_viols:
+                    seen_viols.add(v)
+                    violations.append(v)
+
+        failing_scenarios = [r["scenario"] for r in failing]
+        goal_lc = goal[0].lower() + goal[1:] if goal else "accomplish their goal"
+
+        print(f"❌ {person_name} ({role})", file=file)
+        print(f"   Goal: {Pro} want{sv} to {goal_lc}", file=file)
+
+        if violations:
+            print(f"   Failing constraints:", file=file)
+            for v in violations:
+                print(f"     • {v}", file=file)
+        else:
+            print(f"   (constraints not available — check formula)", file=file)
+
+        if "matrix" in schema:
+            print(f"   Failing scenarios: {', '.join(failing_scenarios)}", file=file)
+
+        print(file=file)
+
+    print("=" * 60 + "\n", file=file)
 
 
 def main(argv=None):
