@@ -103,7 +103,7 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
             "pronoun":     getattr(person, "pronoun", "they"),
             "satisfied":   True,
             "score":       1.0,
-            "constraints": [getattr(c, "_repr", None) or repr(c)
+            "constraints": [{"label": getattr(c, "_repr", None) or repr(c), "passed": True}
                             for c in constraints],
             "violations":  [],
         }
@@ -112,9 +112,10 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
     # evaluate correctly (Real("x") == 1.0 added per variable).
     assignments = fact_vars.pop("_assignments", {})
 
-    passed      = 0
-    violations  = []
-    all_labels  = []
+    passed           = 0
+    violations       = []
+    all_labels       = []
+    constraint_results = []   # [{"label": str, "passed": bool}]
     for i, c in enumerate(constraints):
         label = getattr(c, "_repr", None) or repr(c) or f"constraint[{i}]"
         all_labels.append(label)
@@ -126,7 +127,9 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
                     val = math.copysign(1e9, val)
                 solver.add(Real(var_name) == val)
         solver.add(c)
-        if solver.check() == sat:
+        ok = solver.check() == sat
+        constraint_results.append({"label": label, "passed": ok})
+        if ok:
             passed += 1
         else:
             violations.append(label)
@@ -141,7 +144,7 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
         "pronoun":     getattr(person, "pronoun", "they"),
         "satisfied":   satisfied,
         "score":       round(score, 4),
-        "constraints": all_labels,
+        "constraints": constraint_results,
         "violations":  violations,
     }
 

@@ -71,8 +71,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         badge_cls = "badge-all" if all_ok else "badge-some"
 
         constraints_html = "".join(
-            '<div class="constraint{}">{}</div>'.format(
-                " implies" if c.lower().startswith("if ") else "", c
+            '<div class="constraint{} {}">'
+            '<span class="c-status">{}</span>{}</div>'.format(
+                " implies" if c["label"].lower().startswith("if ") else "",
+                "c-pass" if c["passed"] else "c-fail",
+                "✓" if c["passed"] else "✗",
+                c["label"],
             )
             for c in constraints
         )
@@ -254,6 +258,8 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   line-height: 1.6;
 }}
 .constraint.implies {{ color: var(--orange); }}
+.constraint.c-fail  {{ border-color: var(--fail); background: rgba(248,81,73,.08); }}
+.c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; }}
 
 .grid-panel {{
   padding: 16px 16px 14px;
