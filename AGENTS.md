@@ -1,15 +1,29 @@
 # Setting Up Usersim for a New Project
+
 > Agent instructions. You are configuring usersim for a project that has a working prototype
 > but no usersim defined anywhere. Follow these steps in order. Each step produces artifacts
 > that the next step depends on.
 
 ---
 
+## The Method
+
+**Plan in markdown first. Write code second.**
+
+The value of usersim comes from thinking carefully about who uses this application and what
+they actually need — before touching any code. The planning documents are the deliverables.
+Once you have good markdown, the code is transcription.
+
+Do not skip phases or combine them. Each phase depends on the output of the previous one.
+If a later phase feels hard, it usually means an earlier phase was incomplete.
+
+---
+
 ## Before You Start
 
-Explore the prototype. Read the source code. Understand what it does, what it stores, how it
-behaves when things go wrong, and what kind of person would actually use it. You cannot write
-good user constraints without knowing the application.
+Explore the prototype. Read every source file. Understand what it does, what it stores,
+how it behaves when things go wrong, and what kind of person would actually use it. You
+cannot write good user constraints without knowing the application.
 
 **Do not skip this.** Everything downstream depends on it.
 
@@ -69,13 +83,14 @@ being delivered?* Produce a flat list of things that can be measured by instrume
   - `auth_required: false` → `auth_prompt_count` (constraint will be `== 0`)
   - `data_survived: true` → `reload_loss_count` (constraint will be `== 0`)
 
-**Artifact:** `user_simulation/docs/METRICS.md` — table of metric names, types, descriptions.
+**Artifact:** `user_simulation/docs/METRICS.md` — table of metric names, types, descriptions,
+and which persona benefit motivated each one.
 
 ---
 
 ## Phase 3 — Perceptions
 
-### Step 6: Name the perceptions as transformation functions
+### Step 6: Name the perceptions as verb phrases
 
 Perceptions are the layer between raw metrics and user judgements. Name each one as a verb
 phrase that describes what the function *does*:
@@ -94,69 +109,81 @@ That is fine — the naming and grouping still carries meaning.
 
 **Artifact:** `user_simulation/docs/PERCEPTION_PLAN.md`
 
-### Step 8: Update each persona doc with its relevant metrics
+### Step 8: Update each persona doc with its relevant perceptions
 
-Add a table to each persona file listing which metrics that persona cares about and what
+Add a table to each persona file listing which perceptions that persona cares about and what
 constraint value they would expect (e.g. `== 0`, `<= 2`, `>= 1.0`). This is the bridge
-between the planning documents and the code you will write.
+between the planning documents and the code you will write next.
 
 ---
 
 ## Phase 4 — Instrumentation
 
-### Step 9: Plan the instrumentation
+### Step 9: Plan the scenarios
 
-For each perception, describe what browser automation would actually do to collect its
+For each perception, describe what the instrumentation would actually do to collect its
 input metrics. Think in terms of:
-- What actions to perform (navigate, click, type, reload, go offline)
-- What to observe (DOM queries, localStorage reads, request interception, timing)
-- What needs to run before app code (monitoring hooks injected via `addInitScript`)
-- Which metrics need their own scenario vs. which can share one
+- What actions to perform (navigate, click, type, reload, simulate offline)
+- What to observe (DOM state, storage reads, request counts, timing)
+- What needs to be captured before or alongside application code
+- Which metrics need their own isolated scenario vs. which can share one
 
-Watch for dependencies: some metrics require a fresh browser state, some require seeded data,
-and the offline scenario must be isolated (it changes browser context state).
+Group related metrics into named scenarios. Watch for dependencies: some metrics require
+a fresh state, some require seeded data, and some (like offline simulation) must be isolated
+because they alter the environment.
 
-**Artifact:** `user_simulation/docs/INSTRUMENTATION_PLAN.md`
+**Artifact:** `user_simulation/docs/INSTRUMENTATION_PLAN.md` — one section per scenario,
+listing which metrics it collects and what actions it performs.
 
-### Step 10: Implement instrumentation
+### Step 10: Implement the instrumentation
 
 Create `user_simulation/instrumentation/` with:
 
-- **`monitor.js`** — Pre-init hooks injected before app code runs. Patches `fetch`,
-  `XMLHttpRequest`, and `localStorage.setItem`/`getItem` to record events into
-  `window.__monitor`. This file must work identically in jsdom and Playwright.
+**Monitoring hooks** — code injected or loaded before the application runs. Intercepts
+storage reads/writes, outbound network calls, and timing events. Records everything into
+a shared in-memory structure the scenario runner can read after actions complete.
+This layer should be as passive as possible — observe, don't modify application behaviour.
 
-- **`collect.js`** — Scenario runner. Loads the app, injects monitor.js, performs
-  actions, reads results, outputs a `usersim.metrics.v1` JSON document to stdout.
+**Scenario runner** — loads the application, activates the monitoring hooks, performs the
+actions described in the plan, reads the recorded values, and writes a metrics document
+to stdout:
 
-  Output schema:
-  ```json
-  {
-    "schema": "usersim.metrics.v1",
-    "scenario": "<name>",
-    "metrics": { "<metric_name>": <number>, ... }
-  }
-  ```
+```json
+{
+  "schema":   "usersim.metrics.v1",
+  "scenario": "<name>",
+  "metrics":  { "<metric_name>": <number> }
+}
+```
 
-  The scenario name comes from `process.argv[2]` or `process.env.USERSIM_SCENARIO`.
+The scenario name comes from a command-line argument or environment variable
+(`USERSIM_SCENARIO`). One runner file should support all scenarios via a branch or
+dispatch table — not separate files per scenario.
 
-**Implementation notes:**
-- Use jsdom (`npm install jsdom`) in sandboxed or CI environments without a display
-- Use Playwright (`page.addInitScript()`) for real browser testing — `monitor.js` is identical
-- Share a single localStorage shim object across DOM instances to simulate reloads
-- For `autosave_latency_ms`: patch `localStorage.setItem` to record timestamps, then
-  compare write timestamp to keystroke timestamp
-- For external dependencies: static analysis of the HTML source is sufficient and more
-  reliable than runtime interception
-- For offline simulation: monitor.js already rejects all fetch/XHR — just test that
-  core operations still succeed
+**Implementation guidance:**
+- Choose whatever runtime and automation approach matches the project's stack. A server-side
+  app might use an HTTP client. A browser app might use a headless browser or a DOM emulator.
+  A CLI tool might run as a subprocess. The usersim pipeline only requires that the runner
+  write valid `usersim.metrics.v1` JSON to stdout.
+- For browser apps without a display (CI, sandboxed environments): a DOM emulator that
+  supports JavaScript execution is sufficient for most instrumentation. Real browser testing
+  adds fidelity but is not required to get started.
+- Reload simulation: use a shared storage object across multiple DOM or browser instances
+  rather than actual page navigation when possible — it's faster and more deterministic.
+- Static analysis is often more reliable than runtime interception for structural properties
+  like external dependency counts. Parse the HTML source directly rather than intercepting
+  resource loads.
+- Offline simulation: the monitoring hook layer can reject all network calls — no need for
+  actual network manipulation.
 
 **Test each scenario independently before moving on:**
 ```
-node user_simulation/instrumentation/collect.js baseline
-node user_simulation/instrumentation/collect.js capture_path
+<runner command> baseline
+<runner command> persistence
 ...
 ```
+
+Each should print valid JSON with no errors before you proceed.
 
 ---
 
@@ -170,22 +197,25 @@ def compute(metrics, scenario=None, person=None):
         v = metrics.get(key, default)
         return float(v) if v is not None else default
 
-    # Pass-through: relay single metrics directly
-    # Combining: produce values that no single metric expresses alone
-    # Inferring: composite scores from multiple metrics
+    return {
+        # Pass-through: relay single metrics directly
+        "detecting_outbound_requests": get("fetch_call_count") + get("xhr_call_count"),
 
-    return { ... }
+        # Combining: produce values that no single metric expresses alone
+        "inferring_data_integrity": (
+            get("notes_after_reload", 1.0) / max(get("notes_before_reload", 1.0), 1.0)
+        ),
+
+        # ... one entry per perception from PERCEPTION_PLAN.md
+    }
 ```
 
-**Combining perception examples worth building:**
-- Sum of all request counts across phases → total network exposure regardless of timing
-- Sum of all arrival barriers → total friction before the user can do anything
-- Ratio of `notebook_key_count / notebook_count` → isolation quality (1.0 = perfect)
-- Ratio of `notes_after_reload / notes_before_reload` → data integrity rate
-- Weighted composite of speed + steps + latency + barriers → capture readiness score
-
-**Rule:** return `1.0` (not `0.0`) for ratios when neither input metric was measured in
-the current scenario. A missing measurement is not a failure.
+**Rules:**
+- Return `1.0` (not `0.0`) for ratio perceptions when neither input metric was measured in
+  the current scenario. A missing measurement is not evidence of failure.
+- Every key in the returned dict must appear in `PERCEPTION_PLAN.md`. No extras, no missing.
+- The function signature must accept `scenario` and `person` as keyword arguments even if
+  unused — the runner passes them.
 
 ---
 
@@ -194,28 +224,37 @@ the current scenario. A missing measurement is not a failure.
 ### Step 12: Write one Python file per persona in `user_simulation/users/`
 
 ```python
-from usersim.judgement.person import Person
+from usersim import Person
 
-class MyPersona(Person):
-    name    = "Display Name"
-    role    = "Job title / description"
-    goal    = "One sentence personal goal"
-    pronoun = "they"  # or "he", "she"
+class StreakChaser(Person):
+    name    = "streak_chaser"
+    role    = "Daily habit tracker"
+    goal    = "Never break a streak"
+    pronoun = "they"
 
     def constraints(self, P):
         return [
-            P.some_perception == 0,
-            P.another_perception <= 2,
-            P.ratio_perception >= 1.0,
+            P.measuring_persistence_fidelity >= 1.0,
+            P.detecting_duplicate_prevention == 0,
         ]
 ```
 
-Write constraints that reflect what this person actually cares about — not a generic
-checklist. A constraint that every persona shares is probably not doing useful work.
+`P` is a namespace — access any perception by its exact key name as an attribute.
+`P.some_perception` returns a Z3 expression. Use standard comparison operators.
 
-Calibrate thresholds to what the instrumentation actually produces. Run a scenario first,
-read the perception values, then set constraints that should pass for a working app and
-fail if the app regresses on that dimension.
+For conditional constraints:
+```python
+from usersim.judgement.z3_compat import Implies
+
+Implies(P.habit_count >= 10, P.measuring_render_time <= 200)
+# "If there are 10+ habits, render time must be under 200ms"
+```
+
+**Calibration:** run a scenario first and read the actual perception values before setting
+thresholds. A constraint that always passes or always fails is not providing signal.
+
+**Diversity check:** if two personas have nearly identical constraint sets, one of them is
+not doing useful work. Return to Phase 1 and reconsider.
 
 ---
 
@@ -226,7 +265,7 @@ fail if the app regresses on that dimension.
 ```yaml
 version: 1
 
-instrumentation: node user_simulation/instrumentation/collect.js
+instrumentation: <command to run the scenario runner>
 
 perceptions: user_simulation/perceptions.py
 
@@ -235,7 +274,6 @@ users:
 
 scenarios:
   - baseline
-  - capture_path
   - persistence
   - ...
 
@@ -245,18 +283,19 @@ output:
 ```
 
 The instrumentation command runs from the directory containing `usersim.yaml`.
-`USERSIM_SCENARIO` is set automatically by the runner for each scenario.
+`USERSIM_SCENARIO` is injected automatically by the runner for each scenario.
 
 ### Step 14: Run and verify
 
 ```
-usersim run --verbose
+usersim run
 ```
 
 All checks should pass before committing. If any fail:
-1. Check whether the constraint threshold is wrong (too strict for what the app produces)
-2. Check whether the perception is computing correctly (intermediate values)
-3. Check whether the instrumentation is actually measuring the thing (not returning 0 by default)
+1. Check whether the threshold is wrong — run a scenario manually and read the raw values
+2. Check whether the perception is computing correctly — print intermediate values
+3. Check whether the instrumentation is actually measuring the intended thing (not returning
+   a default zero because the hook never fired)
 
 ---
 
@@ -264,31 +303,28 @@ All checks should pass before committing. If any fail:
 
 ```
 my-app/
-  src/                               ← the application
+  src/                                    ← the application
   user_simulation/
     docs/
-      USERSIM_SETUP.md               ← this file
-      METRICS.md
-      PERCEPTION_PLAN.md
-      INSTRUMENTATION_PLAN.md
-      USER_PERSONAS.md
+      USER_PERSONAS.md                    ← persona overview
+      METRICS.md                          ← all measurable quantities
+      PERCEPTION_PLAN.md                  ← metric → perception mapping
+      INSTRUMENTATION_PLAN.md             ← scenarios and what they collect
       personas/
-        <persona-name>.md            ← one per persona
+        <persona-name>.md                 ← one per persona
     instrumentation/
-      monitor.js                     ← pre-init hooks (browser-agnostic)
-      collect.js                     ← scenario runner
-      package.json
+      <runner files>                      ← scenario runner + monitoring hooks
     users/
-      <persona_name>.py              ← one per persona
+      <persona_name>.py                   ← one per persona
     perceptions.py
-    results.json                     ← gitignore
-    report.html                      ← gitignore
+    results.json                          ← gitignore
+    report.html                           ← gitignore
   usersim.yaml
 ```
 
 ---
 
-## Principles to Keep in Mind
+## Principles
 
 - **People first, metrics second.** The constraint system should feel like a natural
   expression of what a real person would care about — not a technical checklist.
@@ -300,10 +336,13 @@ my-app/
   to a count. The Z3 constraint `count == 0` is more expressive and composable.
 
 - **Perceptions are verb phrases.** `detecting outbound activity`, `measuring write latency`,
-  `inferring trust posture`. The verb tells you what kind of transformation it is.
+  `inferring trust posture`. The verb signals what kind of transformation it is.
 
-- **Test the instrumentation before writing the constraints.** You cannot write good
+- **Test the instrumentation before writing the constraints.** You cannot set good
   thresholds without seeing what the app actually produces.
 
 - **Diverse personas produce diverse constraints.** If two personas have identical
   constraint sets, one of them is not pulling its weight.
+
+- **The plan is the hard part.** If the markdown is right, the code will follow easily.
+  If the code is hard to write, the plan is probably incomplete.
