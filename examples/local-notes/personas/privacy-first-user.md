@@ -1,5 +1,22 @@
 # Persona: The Privacy-First User
 
+## Metrics That Matter to This User
+
+| Metric | Expected Value | Why It Matters |
+|--------|---------------|----------------|
+| `outbound_request_count` | 0 | Any request is a data leak — zero is the only acceptable number |
+| `requests_on_load` | 0 | Nothing should phone home even before the user types |
+| `requests_while_typing` | 0 | Keystroke-level telemetry is the worst-case scenario |
+| `external_resource_count` | 0 | External scripts could exfiltrate data; fonts/CDNs reveal usage to third parties |
+| `auth_required` | false | An account means a database row with their identity attached to their notes |
+| `account_required` | false | Same — no account means no profile to breach or sell |
+| `vendor_dependency` | false | If a vendor is required, that vendor has leverage over your data |
+| `runs_offline` | true | Offline capability is proof that no server involvement is required |
+| `localstorage_available` | true | Data must stay local — localStorage is the mechanism |
+| `data_survives_reload` | true | Persistence without a server is the core value exchange |
+
+---
+
 ## User Benefits — How the App Delivers Them
 
 ---

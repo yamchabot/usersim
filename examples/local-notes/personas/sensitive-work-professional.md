@@ -1,5 +1,22 @@
 # Persona: The Sensitive-Work Professional
 
+## Metrics That Matter to This User
+
+| Metric | Expected Value | Why It Matters |
+|--------|---------------|----------------|
+| `outbound_request_count` | 0 | Client information must never be transmitted — zero requests is non-negotiable |
+| `requests_while_typing` | 0 | Any request during a client conversation is a potential compliance violation |
+| `auth_required` | false | No authentication means no account, no vendor, no data processor |
+| `account_required` | false | An account ties the user's identity to the notes — unacceptable for client work |
+| `vendor_dependency` | false | No vendor means no DPA, no security review, no subprocessor disclosure required |
+| `notebooks_count` | ≥ 1 per matter | One notebook per client or case ensures clean data separation |
+| `notebook_keys_are_independent` | true | Structural isolation is stronger than permission-based isolation — it can't be misconfigured |
+| `localstorage_available` | true | The entire data boundary depends on localStorage working correctly |
+| `external_resource_count` | 0 | External resources reveal usage patterns and could theoretically exfiltrate content |
+| `data_survives_reload` | true | Notes from a client session must persist — losing them is a professional failure |
+
+---
+
 ## User Benefits — How the App Delivers Them
 
 ---

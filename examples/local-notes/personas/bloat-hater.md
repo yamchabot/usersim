@@ -1,5 +1,21 @@
 # Persona: The Bloat-Hater
 
+## Metrics That Matter to This User
+
+| Metric | Expected Value | Why It Matters |
+|--------|---------------|----------------|
+| `interactive_element_count` | low | Every extra button is a feature that wasn't asked for |
+| `modal_shown_on_load` | false | A modal on load is the definition of the app getting in the way |
+| `onboarding_shown` | false | An onboarding tour means the app doesn't trust the user to figure it out |
+| `steps_to_new_note` | low (≤ 2) | If it takes more than two clicks to write a note, something has gone wrong |
+| `external_dependency_count` | 0 | External dependencies mean the app is already more complex than it needs to be |
+| `vendor_dependency` | false | Any required vendor is a future liability — updates, outages, pricing changes |
+| `runs_offline` | true | An app that requires the internet for notes has already over-engineered itself |
+| `time_to_interactive_ms` | low (< 500ms) | A slow load is a sign of unnecessary weight |
+| `requests_on_load` | 0 | Network requests on load mean the app is doing things it doesn't need to do |
+
+---
+
 ## User Benefits — How the App Delivers Them
 
 ---
