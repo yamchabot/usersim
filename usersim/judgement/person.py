@@ -55,6 +55,9 @@ class Person:
 
     name:        str = ""
     description: str = ""
+    role:        str = ""   # job title shown in reports
+    goal:        str = ""   # what this person wants to accomplish
+    pronoun:     str = "they"  # he / she / they
 
     def constraints(self, P: FactNamespace) -> list:
         raise NotImplementedError(

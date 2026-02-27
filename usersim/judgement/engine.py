@@ -99,6 +99,9 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
     if not constraints:
         return {
             "person":     person.name,
+            "role":       getattr(person, "role",    ""),
+            "goal":       getattr(person, "goal",    ""),
+            "pronoun":    getattr(person, "pronoun", "they"),
             "satisfied":  True,
             "score":      1.0,
             "violations": [],
@@ -120,6 +123,9 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
 
     return {
         "person":     person.name,
+        "role":       getattr(person, "role",    ""),
+        "goal":       getattr(person, "goal",    ""),
+        "pronoun":    getattr(person, "pronoun", "they"),
         "satisfied":  satisfied,
         "score":      round(score, 4),
         "violations": violations,
