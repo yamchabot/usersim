@@ -224,9 +224,163 @@ async function runPersistence() {
   };
 }
 
+async function runIsolation() {
+  /**
+   * Create two notebooks, write notes to each, then verify their data lives
+   * under completely separate localStorage keys with no cross-contamination.
+   */
+  const dom = buildDOM();
+  await wait(300);
+
+  const ls = localStorageShim;
+
+  // Notebook 1 already exists (the default "My Notes"). Add a note to it.
+  const w1 = dom.window;
+  const d1 = w1.document;
+  const nb1btn = d1.getElementById('btn-new-note');
+  nb1btn.dispatchEvent(new w1.MouseEvent('click', { bubbles: true }));
+  await wait(50);
+  const t1 = d1.getElementById('note-title-input');
+  t1.value = 'Note in notebook 1';
+  t1.dispatchEvent(new w1.Event('input', { bubbles: true }));
+  await wait(800); // autosave debounce
+
+  // Inject a second notebook directly into localStorage, then reload
+  const notebooks = readNotebooks(ls);
+  const nb2 = { id: 'nb2-test', name: 'Second Notebook', createdAt: Date.now() };
+  notebooks.push(nb2);
+  ls.setItem('ln:notebooks', JSON.stringify(notebooks));
+
+  // Reload — new DOM sees both notebooks
+  const dom2 = buildDOM();
+  await wait(300);
+  const w2 = dom2.window;
+  const d2 = w2.document;
+
+  // Switch to second notebook
+  const nbItems = d2.querySelectorAll('.notebook-item');
+  let nb2El = null;
+  nbItems.forEach(el => { if (el.textContent.includes('Second')) nb2El = el; });
+  if (nb2El) {
+    nb2El.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
+    await wait(100);
+  }
+
+  // Add a note to the second notebook
+  const nb2btn = d2.getElementById('btn-new-note');
+  nb2btn.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
+  await wait(50);
+  const t2 = d2.getElementById('note-title-input');
+  t2.value = 'Note in notebook 2';
+  t2.dispatchEvent(new w2.Event('input', { bubbles: true }));
+  await wait(800); // autosave debounce
+
+  // Inspect localStorage keys
+  const allKeys = Object.keys(ls._store);
+  const noteKeys = allKeys.filter(k => k.startsWith('ln:notes:'));
+  const notebookIds = readNotebooks(ls).map(nb => nb.id);
+
+  // Check isolation: each note key should map to exactly one notebook
+  let sharedCount = 0;
+  noteKeys.forEach(key => {
+    const nbId = key.replace('ln:notes:', '');
+    const notes = readNotes(ls, nbId);
+    // A violation would be notes from a different notebook appearing under this key
+    const otherNbIds = notebookIds.filter(id => id !== nbId);
+    notes.forEach(note => {
+      // Check if this note also appears under any other key
+      otherNbIds.forEach(otherId => {
+        const otherNotes = readNotes(ls, otherId);
+        if (otherNotes.some(n => n.id === note.id)) sharedCount++;
+      });
+    });
+  });
+
+  return {
+    scenario: 'isolation',
+    notebook_count:            notebookIds.length,
+    notebook_key_count:        noteKeys.length,
+    shared_notebook_key_count: sharedCount,
+    notes_per_notebook:        notebookIds.map(id => ({ id, count: readNotes(ls, id).length })),
+  };
+}
+
+async function runSortOrder() {
+  /**
+   * Create three notes, then edit them in a known order so we can predict
+   * the expected recency ranking. Compare predicted vs rendered order.
+   */
+  const dom = buildDOM();
+  await wait(300);
+
+  const { window } = dom;
+  const { document } = window;
+  const ls = localStorageShim;
+
+  // Create three notes one by one
+  const titles = ['Alpha', 'Beta', 'Gamma'];
+  for (const title of titles) {
+    const btn = document.getElementById('btn-new-note');
+    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await wait(50);
+    const input = document.getElementById('note-title-input');
+    input.value = title;
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await wait(700); // autosave
+  }
+
+  // Now edit them in reverse order: Gamma → Beta → Alpha
+  // (so Alpha should end up most recent = top of list)
+  const nbs = readNotebooks(ls);
+  const notesInNb = readNotes(ls, nbs[0].id);
+
+  const editOrder = ['Gamma', 'Beta', 'Alpha'];
+  for (const title of editOrder) {
+    const note = notesInNb.find(n => n.title === title);
+    if (note) {
+      note.body = `Edited: ${title}`;
+      note.updatedAt = Date.now();
+      ls.setItem(`ln:notes:${nbs[0].id}`, JSON.stringify(notesInNb));
+    }
+    await wait(50);
+  }
+
+  // Reload so the DOM reflects the updated order
+  const dom2 = buildDOM();
+  await wait(300);
+  const { document: d2 } = dom2.window;
+
+  // Read rendered order from DOM
+  const renderedTitles = Array.from(
+    d2.querySelectorAll('.note-item .note-title')
+  ).map(el => el.textContent.trim());
+
+  // Expected order: most recently edited first → Alpha, Beta, Gamma
+  const expectedOrder = ['Alpha', 'Beta', 'Gamma'];
+
+  let recencyViolations = 0;
+  expectedOrder.forEach((expected, i) => {
+    if (renderedTitles[i] !== expected) recencyViolations++;
+  });
+
+  return {
+    scenario: 'sort_order',
+    notes_created:          titles.length,
+    rendered_order:         renderedTitles,
+    expected_order:         expectedOrder,
+    recency_violation_count: recencyViolations,
+  };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const scenarios = { baseline: runBaseline, capture_path: runCapturePathLength, persistence: runPersistence };
+const scenarios = {
+  baseline:     runBaseline,
+  capture_path: runCapturePathLength,
+  persistence:  runPersistence,
+  isolation:    runIsolation,
+  sort_order:   runSortOrder,
+};
 const runner = scenarios[scenario] || scenarios.baseline;
 
 runner()
