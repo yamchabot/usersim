@@ -10,3 +10,5 @@ perceptions.json
 results.json
 report.html
 .usersim_cache/
+node_modules/
+examples/local-notes/user_simulation/instrumentation/node_modules/
