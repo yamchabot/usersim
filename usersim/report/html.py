@@ -62,23 +62,46 @@ def generate_report(results: dict, output_path: str | Path) -> None:
 
         # Pull metadata from first result that has it
         first = next((r for r in person_results if r), {})
-        role        = first.get("role",        "")
-        goal        = first.get("goal",        "")
-        pronoun     = first.get("pronoun",     "they")
-        constraints = first.get("constraints", [])
+        role    = first.get("role",    "")
+        goal    = first.get("goal",    "")
+        pronoun = first.get("pronoun", "they")
+
+        # Aggregate constraint pass counts across ALL scenarios
+        # constraints is [{label, passed}, ...] — same labels, varying passed
+        n_scenarios = len([r for r in person_results if r])
+        constraint_counts: dict[str, int] = {}   # label → pass count
+        constraint_labels: list[str] = []
+        for r in person_results:
+            if not r:
+                continue
+            for c in r.get("constraints", []):
+                lbl = c["label"] if isinstance(c, dict) else c
+                if lbl not in constraint_counts:
+                    constraint_labels.append(lbl)
+                    constraint_counts[lbl] = 0
+                if (c["passed"] if isinstance(c, dict) else True):
+                    constraint_counts[lbl] += 1
 
         card_cls = "all-pass" if all_ok else "some-fail"
         badge_cls = "badge-all" if all_ok else "badge-some"
 
         constraints_html = "".join(
             '<div class="constraint{} {}">'
-            '<span class="c-status">{}</span>{}</div>'.format(
-                " implies" if c["label"].lower().startswith("if ") else "",
-                "c-pass" if c["passed"] else "c-fail",
-                "✓" if c["passed"] else "✗",
-                c["label"],
+            '<span class="c-status">{}</span>'
+            '<span class="c-label">{}</span>'
+            '<span class="c-count">{}/{}</span></div>'.format(
+                " implies" if lbl.lower().startswith("if ") else "",
+                "c-pass" if constraint_counts[lbl] == n_scenarios
+                    else "c-fail" if constraint_counts[lbl] == 0
+                    else "c-partial",
+                "✓" if constraint_counts[lbl] == n_scenarios
+                    else "✗" if constraint_counts[lbl] == 0
+                    else "~",
+                lbl,
+                constraint_counts[lbl],
+                n_scenarios,
             )
-            for c in constraints
+            for lbl in constraint_labels
         )
 
         # Dot grid
@@ -257,10 +280,14 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   word-break: break-word;
   line-height: 1.6;
 }}
-.constraint.implies          {{ color: var(--orange); }}
-.constraint.implies.c-pass  {{ color: var(--blue); opacity: 0.45; }}
-.constraint.c-fail           {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
+.constraint.implies           {{ color: var(--orange); }}
+.constraint.implies.c-pass   {{ color: var(--blue); opacity: 0.45; }}
+.constraint.c-fail            {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
+.constraint.c-partial         {{ border-color: var(--orange); background: rgba(255,166,87,.08); color: var(--orange); }}
 .c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; }}
+.c-label  {{ flex: 1; }}
+.c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; }}
+.constraint {{ display: flex; align-items: center; }}
 
 .grid-panel {{
   padding: 16px 16px 14px;
