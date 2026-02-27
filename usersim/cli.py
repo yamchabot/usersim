@@ -54,9 +54,9 @@ def cmd_run(args):
     if not args.quiet:
         if args.matrix:
             _print_summary(results, file=sys.stderr)
-        _print_narrative(results, file=sys.stdout)
+        _print_narrative(results, file=sys.stderr)
 
-    return 0 if results["summary"]["score"] == 1.0 else 1
+    return 0 if results["summary"]["score"] == 1.0 else 2
 
 
 def cmd_judge(args):
@@ -81,7 +81,7 @@ def cmd_judge(args):
         )
     if not args.quiet:
         _print_summary(results, file=sys.stderr)
-    return 0 if results["summary"]["score"] == 1.0 else 1
+    return 0 if results["summary"]["score"] == 1.0 else 2
 
 
 def cmd_report(args):
