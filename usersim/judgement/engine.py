@@ -58,10 +58,15 @@ def _named_real_val(name: str, value: float):
 
     In the pure-Python fallback: repr = name → violations say "(x >= 0.9)"
     With real Z3: falls back to RealVal (repr = numeric string).
+    Infinity values are clamped to a large finite sentinel (Z3 can't parse inf).
     """
     if not Z3_REAL:
         from . import z3_compat as _zc
         return _zc._Expr(lambda env, _v=value: _v, name)
+    import math
+    if math.isinf(value) or math.isnan(value):
+        # Use a large sentinel: +inf → 1e9, -inf → -1e9
+        value = math.copysign(1e9, value)
     return RealVal(value)
 
 
