@@ -2,18 +2,18 @@
 
 ## Metrics That Matter to This User
 
-| Metric | Expected Value | Why It Matters |
-|--------|---------------|----------------|
-| `notebooks_count` | ≥ 2 | One notebook per project — multiple projects means multiple notebooks |
-| `notebook_switch_time_ms` | low (< 300ms) | Context switching between projects must be instant |
-| `data_survives_reload` | true | Notes must be there next time — this is working memory, not scratch paper |
-| `notes_sorted_by_recency` | true | The most recently touched note should be at the top — it's the one being worked on |
-| `outbound_request_count` | 0 | Sensitive credentials and tokens must not leave the browser |
-| `requests_while_typing` | 0 | Keystroke capture of tokens or connection strings is a security failure |
-| `external_resource_count` | 0 | External scripts loaded while sensitive content is in the DOM is unacceptable |
-| `autosave_latency_ms` | low (< 1000ms) | The developer is already context-switching; they can't also remember to save |
-| `notebook_keys_are_independent` | true | Projects must be isolated — a notebook's notes should not bleed into another's |
-| `notes_count_active_notebook` | growing | A useful scratchpad accumulates notes over the life of the project |
+| Metric | Constraint | Why It Matters |
+|--------|-----------|----------------|
+| `notebook_count` | ≥ 2 | One notebook per project — multiple projects means multiple notebooks |
+| `notebook_switch_time_ms` | < 300 | Context switching between projects must be instant |
+| `reload_loss_count` | == 0 | Notes must be there next time — this is working memory, not scratch paper |
+| `recency_violation_count` | == 0 | The most recently touched note should be at the top — it's the one being worked on |
+| `outbound_request_count` | == 0 | Sensitive credentials and tokens must not leave the browser |
+| `typing_request_count` | == 0 | Keystroke capture of tokens or connection strings is a security failure |
+| `external_resource_count` | == 0 | External scripts loaded while sensitive content is in the DOM is unacceptable |
+| `autosave_latency_ms` | < 1000 | The developer is already context-switching; they can't also remember to save |
+| `shared_notebook_key_count` | == 0 | Projects must be isolated — a notebook's notes should not bleed into another's |
+| `active_notebook_note_count` | > 0 | A useful scratchpad accumulates notes over the life of the project |
 
 ---
 

@@ -2,18 +2,18 @@
 
 ## Metrics That Matter to This User
 
-| Metric | Expected Value | Why It Matters |
-|--------|---------------|----------------|
-| `time_to_interactive_ms` | low (< 500ms) | Every millisecond of loading is a window for the thought to escape |
-| `time_to_first_keystroke_ms` | low (< 500ms) | Capture starts when typing starts — not when the page finishes loading |
-| `autosave_latency_ms` | low (< 1000ms) | Switching away from the tab shouldn't risk losing what was just typed |
-| `steps_to_new_note` | low (≤ 2) | Friction in capture means things don't get captured |
-| `modal_shown_on_load` | false | Any modal on load is a barrier before the user can type |
-| `onboarding_shown` | false | An onboarding flow is the opposite of instant capture |
-| `data_survives_reload` | true | The point of the app is that things stay — it must survive tab close |
-| `notes_count_total` | growing | If this number grows over time, the capture habit is forming |
-| `notebook_switch_time_ms` | low (< 300ms) | Context switching must be instant — delay breaks the capture flow |
-| `time_since_last_autosave_ms` | low | Indicates the app is reliably keeping up with input |
+| Metric | Constraint | Why It Matters |
+|--------|-----------|----------------|
+| `time_to_interactive_ms` | < 500 | Every millisecond of loading is a window for the thought to escape |
+| `time_to_first_keystroke_ms` | < 500 | Capture starts when typing starts — not when the page finishes loading |
+| `autosave_latency_ms` | < 1000 | Switching away from the tab shouldn't risk losing what was just typed |
+| `new_note_step_count` | ≤ 2 | Friction in capture means things don't get captured |
+| `load_modal_count` | == 0 | Any modal on load is a barrier before the user can type |
+| `onboarding_step_count` | == 0 | An onboarding flow is the opposite of instant capture |
+| `reload_loss_count` | == 0 | The point of the app is that things stay — it must survive tab close |
+| `total_note_count` | > 0 | If this number grows over time, the capture habit is forming |
+| `notebook_switch_time_ms` | < 300 | Context switching must be instant — delay breaks the capture flow |
+| `time_since_last_autosave_ms` | < 2000 | Indicates the app is reliably keeping up with input |
 
 ---
 

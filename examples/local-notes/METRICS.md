@@ -1,6 +1,6 @@
 # Measurable Quantities — Local Notes
-> These are the observable facts about the app that users would use to judge whether their needs are being met.
-> All are measurable by browser instrumentation without modifying the app's core logic.
+> Observable facts about the app that users would use to judge whether their needs are being met.
+> All are measurable by browser instrumentation. Booleans live in judgements — everything here is a count or measurement.
 
 ---
 
@@ -19,10 +19,11 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `outbound_request_count` | number | Total HTTP requests made by the app at any point during a session |
-| `requests_on_load` | number | HTTP requests made during initial page load |
-| `requests_while_typing` | number | HTTP requests made during an active typing session |
-| `external_resource_count` | number | Scripts, fonts, stylesheets, or images loaded from external domains |
+| `outbound_request_count` | count | Total HTTP requests made by the app at any point during a session |
+| `load_request_count` | count | HTTP requests made during initial page load |
+| `typing_request_count` | count | HTTP requests made during an active typing session |
+| `external_resource_count` | count | Scripts, fonts, stylesheets, or images loaded from external domains |
+| `external_service_call_count` | count | Calls made to third-party services at any point |
 
 ---
 
@@ -30,14 +31,14 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `localstorage_available` | boolean | Whether localStorage is accessible in the current browser context |
-| `data_survives_reload` | boolean | Whether notebooks and notes are present and correct after a full page reload |
-| `notebooks_count` | number | Number of notebooks currently stored |
-| `notes_count_total` | number | Total notes across all notebooks |
-| `notes_count_active_notebook` | number | Notes in the currently selected notebook |
+| `storage_error_count` | count | Read/write errors against localStorage |
+| `notebook_count` | count | Number of notebooks currently stored |
+| `total_note_count` | count | Total notes across all notebooks |
+| `active_notebook_note_count` | count | Notes in the currently selected notebook |
 | `total_storage_bytes` | number | Total bytes occupied in localStorage by the app |
-| `oldest_note_age_days` | number | Age in days of the oldest note — proxy for long-term persistence reliability |
-| `notes_sorted_by_recency` | boolean | Whether the note list is ordered by most recently updated first |
+| `oldest_note_age_days` | number | Age in days of the oldest note |
+| `reload_loss_count` | count | Notes or notebooks present before reload that were missing after |
+| `recency_violation_count` | count | Notes appearing above a note they should appear below by last-updated time |
 
 ---
 
@@ -45,10 +46,10 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `notebook_key_count` | number | Number of distinct localStorage keys used for notebook data (should equal `notebooks_count`) |
-| `notebook_keys_are_independent` | boolean | Whether each notebook's data is stored under its own separate key with no cross-contamination |
-| `auth_required` | boolean | Whether the app requested any form of authentication |
-| `account_required` | boolean | Whether the app prompted account creation at any point |
+| `notebook_key_count` | count | Distinct localStorage keys used for notebook data |
+| `shared_notebook_key_count` | count | Notebook pairs sharing a storage key (should be 0) |
+| `auth_prompt_count` | count | Authentication prompts displayed to the user |
+| `account_prompt_count` | count | Account creation dialogs shown at any point |
 
 ---
 
@@ -56,10 +57,10 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `interactive_element_count` | number | Number of buttons, inputs, and controls visible on screen at rest |
-| `modal_shown_on_load` | boolean | Whether a modal or overlay appeared without user action on first load |
-| `onboarding_shown` | boolean | Whether an onboarding flow, tutorial, or feature tour was displayed |
-| `steps_to_new_note` | number | Number of distinct user interactions required to create a new note from scratch |
+| `interactive_element_count` | count | Buttons, inputs, and controls visible on screen at rest |
+| `load_modal_count` | count | Modals or overlays that appeared without user action on load |
+| `onboarding_step_count` | count | Onboarding screens or tutorial steps displayed |
+| `new_note_step_count` | count | User interactions required to create a new note from scratch |
 
 ---
 
@@ -67,9 +68,8 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `runs_offline` | boolean | Whether the app is fully functional with no network connection |
-| `external_dependency_count` | number | Number of external JavaScript or CSS libraries loaded from outside the app file |
-| `vendor_dependency` | boolean | Whether the app requires any third-party service to function at all |
+| `offline_failure_count` | count | Features that fail when network is disconnected |
+| `external_dependency_count` | count | External JavaScript or CSS libraries loaded from outside the app file |
 
 ---
 
@@ -77,6 +77,6 @@
 
 | Name | Type | Description |
 |------|------|-------------|
-| `notes_created_this_session` | number | Notes created since the page was opened |
-| `notes_edited_this_session` | number | Notes modified since the page was opened |
+| `session_note_create_count` | count | Notes created since the page was opened |
+| `session_note_edit_count` | count | Notes modified since the page was opened |
 | `time_since_last_autosave_ms` | number | Milliseconds since the last successful write to localStorage |

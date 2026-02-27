@@ -2,18 +2,18 @@
 
 ## Metrics That Matter to This User
 
-| Metric | Expected Value | Why It Matters |
-|--------|---------------|----------------|
-| `outbound_request_count` | 0 | Any request is a data leak — zero is the only acceptable number |
-| `requests_on_load` | 0 | Nothing should phone home even before the user types |
-| `requests_while_typing` | 0 | Keystroke-level telemetry is the worst-case scenario |
-| `external_resource_count` | 0 | External scripts could exfiltrate data; fonts/CDNs reveal usage to third parties |
-| `auth_required` | false | An account means a database row with their identity attached to their notes |
-| `account_required` | false | Same — no account means no profile to breach or sell |
-| `vendor_dependency` | false | If a vendor is required, that vendor has leverage over your data |
-| `runs_offline` | true | Offline capability is proof that no server involvement is required |
-| `localstorage_available` | true | Data must stay local — localStorage is the mechanism |
-| `data_survives_reload` | true | Persistence without a server is the core value exchange |
+| Metric | Constraint | Why It Matters |
+|--------|-----------|----------------|
+| `outbound_request_count` | == 0 | Any request is a data leak — zero is the only acceptable number |
+| `load_request_count` | == 0 | Nothing should phone home even before the user types |
+| `typing_request_count` | == 0 | Keystroke-level telemetry is the worst-case scenario |
+| `external_resource_count` | == 0 | External scripts could exfiltrate data; fonts/CDNs reveal usage to third parties |
+| `external_service_call_count` | == 0 | Any third-party service call is a vendor relationship the user didn't consent to |
+| `auth_prompt_count` | == 0 | An account means a database row with their identity attached to their notes |
+| `account_prompt_count` | == 0 | No account means no profile to breach or sell |
+| `offline_failure_count` | == 0 | Offline capability is proof that no server involvement is required |
+| `storage_error_count` | == 0 | Data must stay local — localStorage must work reliably |
+| `reload_loss_count` | == 0 | Persistence without a server is the core value exchange |
 
 ---
 
