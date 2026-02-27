@@ -28,21 +28,22 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         ok    = r["satisfied"]
         sc    = r["score"]
         viols = r.get("violations", [])
-        tip   = "\\n".join(viols) if viols else "All constraints satisfied"
+        tip   = "&#10;".join(viols) if viols else "All constraints satisfied"
         cls   = "pass" if ok else "fail"
         sym   = "✓" if ok else "✗"
         return f"<td class='{cls}' title='{tip}'>{sym} {sc:.0%}</td>"
 
+    # Scenarios as rows, persons as columns
     rows = ""
-    for p in persons:
-        person_results = [result_map.get((p, s)) for s in scenarios]
-        pct = sum(1 for r in person_results if r and r["satisfied"]) / max(len(scenarios), 1)
-        rows += f"<tr><td class='person'>{p}</td>"
-        for s in scenarios:
+    for s in scenarios:
+        scenario_results = [result_map.get((p, s)) for p in persons]
+        pct = sum(1 for r in scenario_results if r and r["satisfied"]) / max(len(persons), 1)
+        rows += f"<tr><td class='scenario'>{s}</td>"
+        for p in persons:
             rows += cell(p, s)
         rows += f"<td class='total'>{pct:.0%}</td></tr>"
 
-    col_headers = "".join(f"<th>{s}</th>" for s in scenarios)
+    col_headers = "".join(f"<th>{p}</th>" for p in persons)
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -61,7 +62,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   th     {{ background: #161b22; padding: 10px 16px; font-size: 11px; text-transform: uppercase;
              letter-spacing: .06em; color: #8b949e; border-bottom: 1px solid #30363d; text-align: left; }}
   td     {{ padding: 9px 16px; border-bottom: 1px solid #21262d; font-size: 13px; }}
-  td.person {{ font-weight: 600; min-width: 160px; }}
+  td.scenario {{ font-weight: 600; min-width: 180px; }}
   td.pass   {{ color: #3fb950; text-align: center; }}
   td.fail   {{ color: #f85149; text-align: center; }}
   td.na     {{ color: #484f58; text-align: center; }}
@@ -98,7 +99,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   <table>
     <thead>
       <tr>
-        <th>Persona</th>
+        <th>Scenario</th>
         {col_headers}
         <th>% passed</th>
       </tr>
