@@ -18,4 +18,5 @@ class SensitiveWorkProfessional(Person):
             P.notebook_isolation_ratio  >= 1.0,
             P.storage_error_count       == 0,
             P.reload_loss_count         == 0,
+            P.vendor_surface            == 0,
         ]

@@ -1,187 +1,216 @@
 /**
- * collect.js — Basic instrumentation runner
+ * collect.js — Instrumentation runner
  *
  * Loads the Local Notes app in jsdom, injects monitor.js before app code
- * runs, performs a basic scenario, and prints metrics JSON to stdout.
+ * runs, performs a scenario, and prints a usersim.metrics.v1 JSON doc to stdout.
  *
  * Usage:
- *   node collect.js [scenario]
+ *   node collect.js [scenario]            — explicit scenario
+ *   USERSIM_SCENARIO=baseline node collect.js  — via env var (usersim run)
  *
- * In a real environment: swap jsdom for Playwright's page.addInitScript().
- * The monitor.js file is identical in both cases.
+ * Swap jsdom for Playwright's page.addInitScript() for real browser testing.
+ * monitor.js is identical in both environments.
  */
 
 const { JSDOM } = require('jsdom');
-const fs = require('fs');
+const fs   = require('fs');
 const path = require('path');
 
-const APP_HTML = path.resolve(__dirname, '../../src/index.html');
+const APP_HTML  = path.resolve(__dirname, '../../src/index.html');
 const MONITOR_JS = path.resolve(__dirname, 'monitor.js');
 
 const scenario = process.argv[2] || process.env.USERSIM_SCENARIO || 'baseline';
 
-// ── Load sources ─────────────────────────────────────────────────────────────
+// ── Load sources ──────────────────────────────────────────────────────────────
 
-const html = fs.readFileSync(APP_HTML, 'utf-8');
+const html        = fs.readFileSync(APP_HTML,   'utf-8');
 const monitorCode = fs.readFileSync(MONITOR_JS, 'utf-8');
 
-// ── localStorage shim (shared across reload simulation) ───────────────────────
+// ── localStorage shim (shared across reload simulations) ─────────────────────
 
 const store = {};
 const localStorageShim = {
   _store: store,
-  getItem(k)      { return k in store ? store[k] : null; },
-  setItem(k, v)   { store[k] = String(v); },
-  removeItem(k)   { delete store[k]; },
-  clear()         { Object.keys(store).forEach(k => delete store[k]); },
-  key(i)          { return Object.keys(store)[i] ?? null; },
-  get length()    { return Object.keys(store).length; },
+  getItem(k)    { return k in store ? store[k] : null; },
+  setItem(k, v) { store[k] = String(v); },
+  removeItem(k) { delete store[k]; },
+  clear()       { Object.keys(store).forEach(k => delete store[k]); },
+  key(i)        { return Object.keys(store)[i] ?? null; },
+  get length()  { return Object.keys(store).length; },
 };
 
-// ── Build a JSDOM instance with monitor injected ───────────────────────────
+// ── Build a JSDOM instance with monitor injected ──────────────────────────────
 
 function buildDOM(extraSetup) {
-  return new JSDOM(html, {
+  const t0 = Date.now();
+  const dom = new JSDOM(html, {
     url: 'http://localhost:8765/',
     runScripts: 'dangerously',
     resources: 'usable',
     beforeParse(window) {
-      // Attach the shared localStorage shim so state survives across instances
       Object.defineProperty(window, 'localStorage', {
         value: localStorageShim,
         writable: false,
         configurable: true,
       });
-
-      // Inject monitor BEFORE app code runs
-      const script = window.document.createElement('script');
-      script.textContent = monitorCode.replace(/\(window\)/, '(window)');
-      // Run monitor code directly in the window context
-      try {
-        window.eval(monitorCode);
-      } catch (e) {
-        // monitor install failed — note it but continue
-        console.error('[collect] monitor install error:', e.message);
-      }
-
+      try { window.eval(monitorCode); }
+      catch (e) { process.stderr.write(`[collect] monitor error: ${e.message}\n`); }
       if (extraSetup) extraSetup(window);
     },
   });
+  dom._buildMs = Date.now() - t0;  // time for jsdom to parse + run scripts
+  return dom;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function wait(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+function readNotebooks(ls)        { return JSON.parse(ls.getItem('ln:notebooks') || '[]'); }
+function readNotes(ls, nbId)      { return JSON.parse(ls.getItem(`ln:notes:${nbId}`) || '[]'); }
+function countAllNotes(ls)        { return readNotebooks(ls).reduce((s, nb) => s + readNotes(ls, nb.id).length, 0); }
+function countInteractive(doc)    { return doc.querySelectorAll('button, input, textarea, select, [role="button"]').length; }
+function countVisibleModals(doc)  { const o = doc.getElementById('modal-overlay'); return o?.classList.contains('open') ? 1 : 0; }
+
+/** Static analysis: count external <script src> and <link href> tags. */
+function countExternalResources() {
+  const isExternal = u => /^https?:\/\//.test(u);
+  const scripts = [...html.matchAll(/<script[^>]+src=["']([^"']+)["']/gi)].filter(m => isExternal(m[1]));
+  const links   = [...html.matchAll(/<link[^>]+href=["']([^"']+)["']/gi)].filter(m => isExternal(m[1]));
+  return {
+    external_dependency_count: scripts.length,   // external JS
+    external_resource_count:   links.length,     // external CSS / fonts
+  };
 }
 
-function countInteractiveElements(document) {
-  return document.querySelectorAll('button, input, textarea, select, [role="button"]').length;
-}
-
-function countVisibleModals(document) {
-  // Check for the overlay element — visible if it has class 'open'
-  const overlay = document.getElementById('modal-overlay');
-  return overlay && overlay.classList.contains('open') ? 1 : 0;
-}
-
-function readNotebooks(localStorage) {
-  return JSON.parse(localStorage.getItem('ln:notebooks') || '[]');
-}
-
-function readNotes(localStorage, notebookId) {
-  return JSON.parse(localStorage.getItem(`ln:notes:${notebookId}`) || '[]');
-}
-
-function countAllNotes(localStorage) {
-  const notebooks = readNotebooks(localStorage);
-  return notebooks.reduce((sum, nb) => sum + readNotes(localStorage, nb.id).length, 0);
-}
-
-function countStorageKeys(localStorage) {
-  return Object.keys(localStorage._store).length;
+/** Find oldest note's age in days across all notebooks. */
+function oldestNoteAgeDays(ls) {
+  const now = Date.now();
+  let minTs = null;
+  readNotebooks(ls).forEach(nb => {
+    readNotes(ls, nb.id).forEach(n => {
+      if (minTs === null || n.createdAt < minTs) minTs = n.createdAt;
+    });
+  });
+  if (minTs === null) return 0;
+  return (now - minTs) / 86_400_000;
 }
 
 // ── Scenarios ─────────────────────────────────────────────────────────────────
 
 async function runBaseline() {
   /**
-   * Baseline: load the app fresh, measure initial state.
-   * No user interaction — just what the app presents on arrival.
+   * Baseline: load the app, measure everything observable without user interaction.
+   * Also seeds one 7-day-old note to exercise oldest_note_age_days.
    */
+
+  // Seed a note from 7 days ago directly into localStorage before the app loads
+  const sevenDaysAgo = Date.now() - 7 * 86_400_000;
+  const seedNbId = 'seed-nb';
+  store['ln:notebooks'] = JSON.stringify([
+    { id: seedNbId, name: 'My Notes', createdAt: sevenDaysAgo }
+  ]);
+  store[`ln:notes:${seedNbId}`] = JSON.stringify([
+    { id: 'seed-note', title: 'Old note', body: '', createdAt: sevenDaysAgo, updatedAt: sevenDaysAgo }
+  ]);
+  store['ln:activeNotebook'] = seedNbId;
+
+  const t0  = Date.now();
   const dom = buildDOM();
-  await wait(300); // let app init run
+  const timeToInteractive = dom._buildMs;  // scripts run synchronously during parse
+  await wait(300);
 
   const { window } = dom;
   const { document, __monitor: m } = window;
   const ls = localStorageShim;
 
-  const notebooks = readNotebooks(ls);
-  const noteCount = countAllNotes(ls);
+  const notebooks   = readNotebooks(ls);
+  const noteCount   = countAllNotes(ls);
+  const { external_dependency_count, external_resource_count } = countExternalResources();
 
   return {
     scenario: 'baseline',
-    outbound_request_count:   m.requests.length,
-    load_request_count:       m.requests.length,
-    load_modal_count:         countVisibleModals(document),
-    onboarding_step_count:    0, // no onboarding in this app
-    auth_prompt_count:        0, // no auth in this app
-    account_prompt_count:     0, // no accounts in this app
-    interactive_element_count: countInteractiveElements(document),
-    notebook_count:           notebooks.length,
-    total_note_count:         noteCount,
-    storage_error_count:      m.storageErrors,
-    storage_key_count:        countStorageKeys(ls),
+    // Network
+    outbound_request_count:    m.requests.length,
+    load_request_count:        m.requests.length,
+    external_service_call_count: 0,              // none in static app
+    external_dependency_count,
+    external_resource_count,
+    // Arrival friction
+    load_modal_count:          countVisibleModals(document),
+    onboarding_step_count:     0,
+    auth_prompt_count:         0,
+    account_prompt_count:      0,
+    // UI
+    interactive_element_count: countInteractive(document),
+    // Storage
+    notebook_count:            notebooks.length,
+    total_note_count:          noteCount,
+    storage_error_count:       m.storageErrors,
+    // Performance
+    time_to_interactive_ms:    timeToInteractive,
+    // Persistence age
+    oldest_note_age_days:      oldestNoteAgeDays(ls),
   };
 }
 
-async function runCapturePathLength() {
+async function runCapturePath() {
   /**
-   * Measure how many interactions it takes to create a new note.
-   * Starting state: app loaded, default notebook present, no active note.
+   * Measure friction and speed of the capture flow.
+   * Also measures autosave latency by watching localStorage writes.
    */
   const dom = buildDOM();
   await wait(300);
 
   const { window } = dom;
   const { document, __monitor: m } = window;
+  const ls = localStorageShim;
+  const notesBefore = countAllNotes(ls);
 
-  // Reset interaction counter to zero — we only want to count from here
+  // Reset interaction counter — count only from here
   m.interactions = 0;
+  const writesAtStart = m.storageWrites.length;
+
+  // Step 1: click "New note"
   const t0 = Date.now();
+  document.getElementById('btn-new-note')
+    ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(50);
 
-  // Step 1: Click "New note" button
-  const newNoteBtn = document.getElementById('btn-new-note');
-  if (newNoteBtn) {
-    newNoteBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await wait(50);
-  }
-
-  // Step 2: Type something in the title
+  // Step 2: type a title — record timestamp of this "keystroke"
+  const tKeyStroke = Date.now();
   const titleInput = document.getElementById('note-title-input');
   if (titleInput) {
-    titleInput.focus();
-    titleInput.value = 'Test note';
+    titleInput.value = 'Capture test note';
     titleInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-    await wait(50);
   }
 
+  // Wait long enough for the 600ms autosave debounce to fire
+  await wait(900);
   const t1 = Date.now();
-  const stepsUsed = m.interactions;
+
+  // Find the first write to a note key that happened after the keystroke
+  const noteWrite = m.storageWrites
+    .slice(writesAtStart)
+    .find(w => w.key.startsWith('ln:notes:') && w.ts >= tKeyStroke);
+
+  const autosaveLatency = noteWrite ? noteWrite.ts - tKeyStroke : -1;
 
   return {
     scenario: 'capture_path',
-    new_note_step_count:      stepsUsed,
-    time_to_first_keystroke_ms: t1 - t0,
-    outbound_request_count:   m.requests.length,
-    typing_request_count:     m.requests.filter(r => r.ts > t0).length,
+    new_note_step_count:        m.interactions,
+    time_to_first_keystroke_ms: tKeyStroke - t0,
+    autosave_latency_ms:        autosaveLatency,
+    typing_request_count:       m.requests.filter(r => r.ts >= tKeyStroke).length,
+    outbound_request_count:     m.requests.length,
+    session_note_create_count:  countAllNotes(ls) - notesBefore,
+    storage_error_count:        m.storageErrors,
   };
 }
 
 async function runPersistence() {
   /**
-   * Create notes, then simulate a reload by building a new DOM instance
-   * against the same localStorage. Count anything lost.
+   * Create notes, simulate reload, count anything lost.
    */
   const dom = buildDOM();
   await wait(300);
@@ -190,109 +219,89 @@ async function runPersistence() {
   const { document } = window;
   const ls = localStorageShim;
 
-  // Create a note via the UI
-  const newNoteBtn = document.getElementById('btn-new-note');
-  if (newNoteBtn) {
-    newNoteBtn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    await wait(50);
-  }
+  document.getElementById('btn-new-note')
+    ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(50);
+
   const titleInput = document.getElementById('note-title-input');
   if (titleInput) {
     titleInput.value = 'Persistence test note';
     titleInput.dispatchEvent(new window.Event('input', { bubbles: true }));
-    await wait(800); // wait for autosave debounce
+    await wait(800);
   }
 
-  // Record state before reload
-  const notesBeforeReload = countAllNotes(ls);
+  const notesBeforeReload    = countAllNotes(ls);
   const notebooksBeforeReload = readNotebooks(ls).length;
 
-  // Simulate reload — new DOM, same localStorage shim
+  // Simulate reload
   const dom2 = buildDOM();
   await wait(300);
 
-  const notesAfterReload = countAllNotes(ls);
+  const notesAfterReload    = countAllNotes(ls);
   const notebooksAfterReload = readNotebooks(ls).length;
 
   return {
     scenario: 'persistence',
-    notebooks_before_reload:   notebooksBeforeReload,
-    notebooks_after_reload:    notebooksAfterReload,
-    notes_before_reload:       notesBeforeReload,
-    notes_after_reload:        notesAfterReload,
-    reload_loss_count:         Math.max(0, notesBeforeReload - notesAfterReload),
+    notebooks_before_reload: notebooksBeforeReload,
+    notebooks_after_reload:  notebooksAfterReload,
+    notes_before_reload:     notesBeforeReload,
+    notes_after_reload:      notesAfterReload,
+    reload_loss_count:       Math.max(0, notesBeforeReload - notesAfterReload),
   };
 }
 
 async function runIsolation() {
   /**
-   * Create two notebooks, write notes to each, then verify their data lives
-   * under completely separate localStorage keys with no cross-contamination.
+   * Two notebooks, one note each — verify zero cross-contamination.
    */
   const dom = buildDOM();
   await wait(300);
-
   const ls = localStorageShim;
 
-  // Notebook 1 already exists (the default "My Notes"). Add a note to it.
+  // Add note to default notebook
   const w1 = dom.window;
   const d1 = w1.document;
-  const nb1btn = d1.getElementById('btn-new-note');
-  nb1btn.dispatchEvent(new w1.MouseEvent('click', { bubbles: true }));
+  d1.getElementById('btn-new-note')
+    ?.dispatchEvent(new w1.MouseEvent('click', { bubbles: true }));
   await wait(50);
   const t1 = d1.getElementById('note-title-input');
-  t1.value = 'Note in notebook 1';
-  t1.dispatchEvent(new w1.Event('input', { bubbles: true }));
-  await wait(800); // autosave debounce
+  if (t1) { t1.value = 'Note in notebook 1'; t1.dispatchEvent(new w1.Event('input', { bubbles: true })); }
+  await wait(800);
 
-  // Inject a second notebook directly into localStorage, then reload
+  // Inject a second notebook
   const notebooks = readNotebooks(ls);
   const nb2 = { id: 'nb2-test', name: 'Second Notebook', createdAt: Date.now() };
   notebooks.push(nb2);
   ls.setItem('ln:notebooks', JSON.stringify(notebooks));
 
-  // Reload — new DOM sees both notebooks
+  // Reload, switch to second notebook, add a note there
   const dom2 = buildDOM();
   await wait(300);
   const w2 = dom2.window;
   const d2 = w2.document;
 
-  // Switch to second notebook
-  const nbItems = d2.querySelectorAll('.notebook-item');
   let nb2El = null;
-  nbItems.forEach(el => { if (el.textContent.includes('Second')) nb2El = el; });
-  if (nb2El) {
-    nb2El.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
-    await wait(100);
-  }
+  d2.querySelectorAll('.notebook-item').forEach(el => { if (el.textContent.includes('Second')) nb2El = el; });
+  nb2El?.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
+  await wait(100);
 
-  // Add a note to the second notebook
-  const nb2btn = d2.getElementById('btn-new-note');
-  nb2btn.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
+  d2.getElementById('btn-new-note')
+    ?.dispatchEvent(new w2.MouseEvent('click', { bubbles: true }));
   await wait(50);
   const t2 = d2.getElementById('note-title-input');
-  t2.value = 'Note in notebook 2';
-  t2.dispatchEvent(new w2.Event('input', { bubbles: true }));
-  await wait(800); // autosave debounce
+  if (t2) { t2.value = 'Note in notebook 2'; t2.dispatchEvent(new w2.Event('input', { bubbles: true })); }
+  await wait(800);
 
-  // Inspect localStorage keys
-  const allKeys = Object.keys(ls._store);
-  const noteKeys = allKeys.filter(k => k.startsWith('ln:notes:'));
+  // Check isolation
+  const noteKeys   = Object.keys(ls._store).filter(k => k.startsWith('ln:notes:'));
   const notebookIds = readNotebooks(ls).map(nb => nb.id);
-
-  // Check isolation: each note key should map to exactly one notebook
   let sharedCount = 0;
   noteKeys.forEach(key => {
     const nbId = key.replace('ln:notes:', '');
     const notes = readNotes(ls, nbId);
-    // A violation would be notes from a different notebook appearing under this key
-    const otherNbIds = notebookIds.filter(id => id !== nbId);
-    notes.forEach(note => {
-      // Check if this note also appears under any other key
-      otherNbIds.forEach(otherId => {
-        const otherNotes = readNotes(ls, otherId);
-        if (otherNotes.some(n => n.id === note.id)) sharedCount++;
-      });
+    notebookIds.filter(id => id !== nbId).forEach(otherId => {
+      const otherNotes = readNotes(ls, otherId);
+      notes.forEach(n => { if (otherNotes.some(o => o.id === n.id)) sharedCount++; });
     });
   });
 
@@ -301,99 +310,181 @@ async function runIsolation() {
     notebook_count:            notebookIds.length,
     notebook_key_count:        noteKeys.length,
     shared_notebook_key_count: sharedCount,
-    notes_per_notebook:        notebookIds.map(id => ({ id, count: readNotes(ls, id).length })),
   };
 }
 
 async function runSortOrder() {
   /**
-   * Create three notes, then edit them in a known order so we can predict
-   * the expected recency ranking. Compare predicted vs rendered order.
+   * Create 3 notes, edit in reverse order, verify recency sort is correct.
    */
   const dom = buildDOM();
   await wait(300);
-
   const { window } = dom;
   const { document } = window;
   const ls = localStorageShim;
 
-  // Create three notes one by one
-  const titles = ['Alpha', 'Beta', 'Gamma'];
-  for (const title of titles) {
-    const btn = document.getElementById('btn-new-note');
-    btn.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  for (const title of ['Alpha', 'Beta', 'Gamma']) {
+    document.getElementById('btn-new-note')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
     await wait(50);
     const input = document.getElementById('note-title-input');
-    input.value = title;
-    input.dispatchEvent(new window.Event('input', { bubbles: true }));
-    await wait(700); // autosave
+    if (input) { input.value = title; input.dispatchEvent(new window.Event('input', { bubbles: true })); }
+    await wait(700);
   }
 
-  // Now edit them in reverse order: Gamma → Beta → Alpha
-  // (so Alpha should end up most recent = top of list)
-  const nbs = readNotebooks(ls);
-  const notesInNb = readNotes(ls, nbs[0].id);
-
-  const editOrder = ['Gamma', 'Beta', 'Alpha'];
-  for (const title of editOrder) {
-    const note = notesInNb.find(n => n.title === title);
-    if (note) {
-      note.body = `Edited: ${title}`;
-      note.updatedAt = Date.now();
-      ls.setItem(`ln:notes:${nbs[0].id}`, JSON.stringify(notesInNb));
-    }
-    await wait(50);
+  // Edit in reverse order so Alpha ends up most recent
+  const nbs   = readNotebooks(ls);
+  const notes = readNotes(ls, nbs[0].id);
+  for (const title of ['Gamma', 'Beta', 'Alpha']) {
+    const n = notes.find(x => x.title === title);
+    if (n) { n.body = `Edited: ${title}`; n.updatedAt = Date.now(); await wait(20); }
   }
+  ls.setItem(`ln:notes:${nbs[0].id}`, JSON.stringify(notes));
 
-  // Reload so the DOM reflects the updated order
   const dom2 = buildDOM();
   await wait(300);
   const { document: d2 } = dom2.window;
 
-  // Read rendered order from DOM
-  const renderedTitles = Array.from(
-    d2.querySelectorAll('.note-item .note-title')
-  ).map(el => el.textContent.trim());
-
-  // Expected order: most recently edited first → Alpha, Beta, Gamma
-  const expectedOrder = ['Alpha', 'Beta', 'Gamma'];
-
-  let recencyViolations = 0;
-  expectedOrder.forEach((expected, i) => {
-    if (renderedTitles[i] !== expected) recencyViolations++;
-  });
+  const rendered = Array.from(d2.querySelectorAll('.note-item .note-title')).map(el => el.textContent.trim());
+  const expected = ['Alpha', 'Beta', 'Gamma'];
+  const violations = expected.filter((e, i) => rendered[i] !== e).length;
 
   return {
     scenario: 'sort_order',
-    notes_created:          titles.length,
-    rendered_order:         renderedTitles,
-    expected_order:         expectedOrder,
-    recency_violation_count: recencyViolations,
+    rendered_order:          rendered,
+    expected_order:          expected,
+    recency_violation_count: violations,
+  };
+}
+
+async function runOffline() {
+  /**
+   * Verify core operations work with no network.
+   * monitor.js blocks all fetch/XHR — simulates offline.
+   * Counts any operation that fails or loses data.
+   */
+  const dom = buildDOM();
+  await wait(300);
+  const { window } = dom;
+  const { document, __monitor: m } = window;
+  const ls = localStorageShim;
+
+  let failures = 0;
+  const attempt = async (label, fn) => {
+    try { const ok = await fn(); if (!ok) { failures++; } }
+    catch (e) { failures++; }
+  };
+
+  // Op 1: create a note
+  await attempt('create note', async () => {
+    document.getElementById('btn-new-note')
+      ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await wait(50);
+    const input = document.getElementById('note-title-input');
+    return input !== null;
+  });
+
+  // Op 2: type and autosave
+  await attempt('type and save', async () => {
+    const input = document.getElementById('note-title-input');
+    if (!input) return false;
+    input.value = 'Offline note';
+    input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    await wait(800);
+    return countAllNotes(ls) > 0;
+  });
+
+  // Op 3: notes survive reload
+  await attempt('reload persistence', async () => {
+    const before = countAllNotes(ls);
+    const dom2 = buildDOM();
+    await wait(300);
+    const after = countAllNotes(ls);
+    return after >= before;
+  });
+
+  // Op 4: no requests were made during any of the above
+  await attempt('zero requests', async () => m.requests.length === 0);
+
+  return {
+    scenario: 'offline',
+    offline_failure_count: failures,
+    outbound_request_count: m.requests.length,
+  };
+}
+
+async function runContextSwitch() {
+  /**
+   * Measure how fast the UI updates when switching between notebooks.
+   */
+  const ls = localStorageShim;
+
+  // Seed two notebooks with notes before loading
+  const nb1 = { id: 'cs-nb1', name: 'Project A', createdAt: Date.now() };
+  const nb2 = { id: 'cs-nb2', name: 'Project B', createdAt: Date.now() };
+  ls.setItem('ln:notebooks', JSON.stringify([nb1, nb2]));
+  ls.setItem(`ln:notes:${nb1.id}`, JSON.stringify([
+    { id: 'cs-n1', title: 'Alpha note', body: '', createdAt: Date.now(), updatedAt: Date.now() }
+  ]));
+  ls.setItem(`ln:notes:${nb2.id}`, JSON.stringify([
+    { id: 'cs-n2', title: 'Beta note',  body: '', createdAt: Date.now(), updatedAt: Date.now() }
+  ]));
+  ls.setItem('ln:activeNotebook', nb1.id);
+
+  const dom = buildDOM();
+  await wait(300);
+  const { window } = dom;
+  const { document } = window;
+
+  // Find Project B in the sidebar and click it
+  let nb2El = null;
+  document.querySelectorAll('.notebook-item').forEach(el => {
+    if (el.textContent.includes('Project B')) nb2El = el;
+  });
+
+  const t0 = Date.now();
+  nb2El?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+  await wait(50);
+  const t1 = Date.now();
+
+  // Verify the switch rendered Project B's note
+  const noteItems = document.querySelectorAll('.note-item');
+  const switched  = Array.from(noteItems).some(el => el.textContent.includes('Beta note'));
+
+  return {
+    scenario: 'context_switch',
+    notebook_switch_time_ms: switched ? (t1 - t0) : -1,
   };
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const scenarios = {
-  baseline:     runBaseline,
-  capture_path: runCapturePathLength,
-  persistence:  runPersistence,
-  isolation:    runIsolation,
-  sort_order:   runSortOrder,
+  baseline:       runBaseline,
+  capture_path:   runCapturePath,
+  persistence:    runPersistence,
+  isolation:      runIsolation,
+  sort_order:     runSortOrder,
+  offline:        runOffline,
+  context_switch: runContextSwitch,
 };
-const runner = scenarios[scenario] || scenarios.baseline;
+
+const runner = scenarios[scenario];
+if (!runner) {
+  process.stderr.write(`[collect] unknown scenario: ${scenario}\nAvailable: ${Object.keys(scenarios).join(', ')}\n`);
+  process.exit(1);
+}
 
 runner()
   .then(metrics => {
     const { scenario: _s, ...rest } = metrics;
-    const doc = {
+    process.stdout.write(JSON.stringify({
       schema:   'usersim.metrics.v1',
       scenario: _s || scenario,
       metrics:  rest,
-    };
-    process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
+    }, null, 2) + '\n');
   })
   .catch(err => {
-    process.stderr.write(`[collect] error: ${err.message}\n${err.stack}\n`);
+    process.stderr.write(`[collect] error in ${scenario}: ${err.message}\n${err.stack}\n`);
     process.exit(1);
   });

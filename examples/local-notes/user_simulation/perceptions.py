@@ -35,9 +35,13 @@ def compute(metrics, scenario=None, person=None):
     time_to_first_keystroke_ms = get("time_to_first_keystroke_ms")
     autosave_latency_ms        = get("autosave_latency_ms")
     notebook_switch_time_ms    = get("notebook_switch_time_ms")
-    external_resource_count    = get("external_resource_count")
-    external_dependency_count  = get("external_dependency_count")
+    external_resource_count     = get("external_resource_count")
+    external_dependency_count   = get("external_dependency_count")
     external_service_call_count = get("external_service_call_count")
+    time_to_interactive_ms      = get("time_to_interactive_ms")
+    oldest_note_age_days        = get("oldest_note_age_days")
+    session_note_create_count   = get("session_note_create_count")
+    offline_failure_count       = get("offline_failure_count")
 
     # ── Combining perceptions ────────────────────────────────────────────────
     # These produce values that can't be derived from any single metric alone.
@@ -126,6 +130,11 @@ def compute(metrics, scenario=None, person=None):
         "external_resource_count":      external_resource_count,
         "external_dependency_count":    external_dependency_count,
         "external_service_call_count":  external_service_call_count,
+        # Pass-through (continued)
+        "time_to_interactive_ms":       time_to_interactive_ms,
+        "oldest_note_age_days":         oldest_note_age_days,
+        "session_note_create_count":    session_note_create_count,
+        "offline_failure_count":        offline_failure_count,
         # Combining
         "total_request_count":          total_request_count,
         "arrival_friction_total":       arrival_friction_total,
@@ -133,4 +142,15 @@ def compute(metrics, scenario=None, person=None):
         "data_integrity_rate":          data_integrity_rate,
         "notebook_isolation_ratio":     notebook_isolation_ratio,
         "trust_signal_violations":      trust_signal_violations,
+        # Inferring — composite score: lower = more ready (ms-equivalent units)
+        "capture_readiness_score": (
+            get("time_to_first_keystroke_ms")
+            + get("new_note_step_count")   * 500
+            + get("autosave_latency_ms")
+            + get("load_modal_count")      * 1000
+        ),
     }
+
+
+# capture_readiness_score formula:
+#   time_to_first_keystroke_ms + new_note_step_count*500 + autosave_latency_ms + load_modal_count*1000

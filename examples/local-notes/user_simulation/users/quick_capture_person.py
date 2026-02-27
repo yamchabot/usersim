@@ -14,4 +14,6 @@ class QuickCapturePerson(Person):
             P.reload_loss_count       == 0,
             P.data_integrity_rate     >= 1.0,
             P.total_note_count        >= 0,
+            P.time_to_first_keystroke_ms <= 500,
+            P.capture_readiness_score    <= 2000,
         ]

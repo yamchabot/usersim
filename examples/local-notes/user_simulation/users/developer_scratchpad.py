@@ -15,4 +15,5 @@ class DeveloperScratchpad(Person):
             P.notebook_isolation_ratio   >= 1.0,
             P.recency_violation_count    == 0,
             P.reload_loss_count          == 0,
+            P.offline_failure_count      == 0,
         ]
