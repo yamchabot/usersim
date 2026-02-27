@@ -293,6 +293,12 @@ def _call_python_perceptions(
     import importlib.util
 
     import sys as _sys
+    # Add the script's directory to sys.path so it can import sibling modules
+    # (e.g. z3_compat, users) without being a package.
+    script_dir = str(script.parent)
+    if script_dir not in _sys.path:
+        _sys.path.insert(0, script_dir)
+
     spec = importlib.util.spec_from_file_location("_usersim_perceptions", script)
     mod  = importlib.util.module_from_spec(spec)
     # Register in sys.modules before exec so @dataclass and type annotations
