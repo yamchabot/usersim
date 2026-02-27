@@ -257,8 +257,9 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   word-break: break-word;
   line-height: 1.6;
 }}
-.constraint.implies {{ color: var(--orange); }}
-.constraint.c-fail  {{ border-color: var(--fail); background: rgba(248,81,73,.08); }}
+.constraint.implies          {{ color: var(--orange); }}
+.constraint.implies.c-pass  {{ color: var(--blue); opacity: 0.45; }}
+.constraint.c-fail           {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
 .c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; }}
 
 .grid-panel {{
