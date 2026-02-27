@@ -292,9 +292,17 @@ def _call_python_perceptions(
     """Import a Python perceptions.py and call compute(metrics, scenario=...)."""
     import importlib.util
 
+    import sys as _sys
     spec = importlib.util.spec_from_file_location("_usersim_perceptions", script)
     mod  = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    # Register in sys.modules before exec so @dataclass and type annotations
+    # that look up cls.__module__ can find their own module namespace.
+    _sys.modules["_usersim_perceptions"] = mod
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:
+        del _sys.modules["_usersim_perceptions"]
+        raise
 
     if not hasattr(mod, "compute"):
         raise RuntimeError(
