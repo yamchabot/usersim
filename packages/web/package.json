@@ -1,0 +1,20 @@
+{
+  "name": "usersim-web",
+  "version": "0.1.0",
+  "description": "Browser instrumentation helpers for usersim",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "peerDependencies": {
+    "playwright": ">=1.40",
+    "jsdom": ">=25"
+  },
+  "peerDependenciesMeta": {
+    "playwright": { "optional": true },
+    "jsdom": { "optional": true }
+  },
+  "keywords": ["usersim", "browser", "instrumentation", "playwright", "jsdom"],
+  "license": "MIT"
+}
