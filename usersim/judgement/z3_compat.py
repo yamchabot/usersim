@@ -29,9 +29,10 @@ try:
     import z3 as _z3_mod
 
     def Implies(a, b):
-        """Wrap z3.Implies and attach a human-readable _repr."""
+        """Wrap z3.Implies and attach a human-readable _repr and antecedent."""
         expr = _z3_mod.Implies(a, b)
         expr._repr = f"If {a}, then {b}"
+        expr._antecedent = a
         return expr
 
     Z3_REAL = True
@@ -105,8 +106,10 @@ except Exception:
 
     def Implies(a, b):
         a, b = _lit(a), _lit(b)
-        return _Expr(lambda env, _a=a, _b=b: (not bool(_a(env))) or bool(_b(env)),
+        expr = _Expr(lambda env, _a=a, _b=b: (not bool(_a(env))) or bool(_b(env)),
                      f"If {a}, then {b}")
+        expr._antecedent = a
+        return expr
 
     def If(cond, then, else_):
         cond, then, else_ = _lit(cond), _lit(then), _lit(else_)

@@ -115,20 +115,40 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
     passed           = 0
     violations       = []
     all_labels       = []
-    constraint_results = []   # [{"label": str, "passed": bool}]
+    constraint_results = []   # [{"label": str, "passed": bool, "antecedent_fired": bool|None}]
+
+    import math as _math
+
+    def _make_solver():
+        s = Solver()
+        if Z3_REAL and assignments:
+            for var_name, val in assignments.items():
+                v = _math.copysign(1e9, val) if (_math.isinf(val) or _math.isnan(val)) else val
+                s.add(Real(var_name) == v)
+        return s
+
     for i, c in enumerate(constraints):
         label = getattr(c, "_repr", None) or repr(c) or f"constraint[{i}]"
         all_labels.append(label)
-        solver = Solver()
-        if Z3_REAL and assignments:
-            import math
-            for var_name, val in assignments.items():
-                if math.isinf(val) or math.isnan(val):
-                    val = math.copysign(1e9, val)
-                solver.add(Real(var_name) == val)
+
+        solver = _make_solver()
         solver.add(c)
         ok = solver.check() == sat
-        constraint_results.append({"label": label, "passed": ok})
+
+        # For Implies constraints, check whether the antecedent ever fires
+        antecedent = getattr(c, "_antecedent", None)
+        if antecedent is not None:
+            ant_solver = _make_solver()
+            ant_solver.add(antecedent)
+            antecedent_fired = ant_solver.check() == sat
+        else:
+            antecedent_fired = None
+
+        constraint_results.append({
+            "label":             label,
+            "passed":            ok,
+            "antecedent_fired":  antecedent_fired,
+        })
         if ok:
             passed += 1
         else:

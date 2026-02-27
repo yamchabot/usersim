@@ -52,6 +52,49 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     n_pass    = satisfied
     n_fail    = total - satisfied
 
+    # ── Collect never-exercised constraints across all personas ────────────────
+    # {person_name: [label, ...]} for constraints whose antecedent never fired
+    never_exercised: dict[str, list[str]] = {}
+    for person_name in persons_ordered:
+        person_results = [result_map.get((person_name, s)) for s in scenarios]
+        fired_counts: dict[str, int | None] = {}
+        for r in person_results:
+            if not r:
+                continue
+            for c in r.get("constraints", []):
+                if not isinstance(c, dict):
+                    continue
+                lbl   = c["label"]
+                fired = c.get("antecedent_fired")
+                if fired is None:
+                    continue  # not a conditional constraint
+                if lbl not in fired_counts:
+                    fired_counts[lbl] = 0
+                if fired:
+                    fired_counts[lbl] += 1
+        unexercised = [lbl for lbl, cnt in fired_counts.items() if cnt == 0]
+        if unexercised:
+            never_exercised[person_name] = unexercised
+
+    if never_exercised:
+        gap_rows = ""
+        for person_name, labels in never_exercised.items():
+            for lbl in labels:
+                gap_rows += f"<tr><td class='gap-person'>{person_name}</td><td class='gap-label'>{lbl}</td></tr>\n"
+        gaps_html = f"""
+<div class="gaps-section">
+  <div class="gaps-title">⚠️ Never-exercised constraints</div>
+  <p class="gaps-desc">These conditional constraints had their antecedent false in every scenario.
+  Add scenarios where the condition is true to properly test them.</p>
+  <table class="gaps-table">
+    <thead><tr><th>Persona</th><th>Constraint</th></tr></thead>
+    <tbody>{gap_rows}</tbody>
+  </table>
+</div>
+"""
+    else:
+        gaps_html = ""
+
     # ── Per-person cards ───────────────────────────────────────────────────────
     cards_html = ""
     for pi, person_name in enumerate(persons_ordered):
@@ -66,39 +109,58 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         goal    = first.get("goal",    "")
         pronoun = first.get("pronoun", "they")
 
-        # Aggregate constraint pass counts across ALL scenarios
-        # constraints is [{label, passed}, ...] — same labels, varying passed
-        n_scenarios = len([r for r in person_results if r])
-        constraint_counts: dict[str, int] = {}   # label → pass count
+        # Aggregate constraint pass + antecedent_fired counts across ALL scenarios
+        n_scenarios      = len([r for r in person_results if r])
+        constraint_pass:  dict[str, int]       = {}  # label → pass count
+        constraint_fired: dict[str, int | None] = {}  # label → antecedent fired count (None = not conditional)
         constraint_labels: list[str] = []
         for r in person_results:
             if not r:
                 continue
             for c in r.get("constraints", []):
-                lbl = c["label"] if isinstance(c, dict) else c
-                if lbl not in constraint_counts:
+                lbl   = c["label"]  if isinstance(c, dict) else c
+                psd   = c["passed"] if isinstance(c, dict) else True
+                fired = c.get("antecedent_fired") if isinstance(c, dict) else None
+                if lbl not in constraint_pass:
                     constraint_labels.append(lbl)
-                    constraint_counts[lbl] = 0
-                if (c["passed"] if isinstance(c, dict) else True):
-                    constraint_counts[lbl] += 1
+                    constraint_pass[lbl]  = 0
+                    constraint_fired[lbl] = 0 if fired is not None else None
+                if psd:
+                    constraint_pass[lbl] += 1
+                if fired is True and constraint_fired[lbl] is not None:
+                    constraint_fired[lbl] += 1
 
-        card_cls = "all-pass" if all_ok else "some-fail"
+        card_cls  = "all-pass" if all_ok else "some-fail"
         badge_cls = "badge-all" if all_ok else "badge-some"
 
+        def _constraint_cls(lbl):
+            n_pass  = constraint_pass[lbl]
+            n_fired = constraint_fired[lbl]
+            # Conditional and antecedent never fired in any scenario
+            if n_fired == 0 and constraint_fired[lbl] is not None:
+                return "c-pass c-unexercised"
+            if n_pass == n_scenarios:
+                return "c-pass"
+            if n_pass == 0:
+                return "c-fail"
+            return "c-partial"
+
+        def _constraint_sym(lbl):
+            n_pass  = constraint_pass[lbl]
+            n_fired = constraint_fired[lbl]
+            if n_fired == 0 and constraint_fired[lbl] is not None:
+                return "–"
+            return "✓" if n_pass == n_scenarios else "✗" if n_pass == 0 else "~"
+
         constraints_html = "".join(
-            '<div class="constraint{} {}">'
+            '<div class="constraint {}">'
             '<span class="c-status">{}</span>'
             '<span class="c-label">{}</span>'
             '<span class="c-count">{}/{}</span></div>'.format(
-                " implies" if lbl.lower().startswith("if ") else "",
-                "c-pass" if constraint_counts[lbl] == n_scenarios
-                    else "c-fail" if constraint_counts[lbl] == 0
-                    else "c-partial",
-                "✓" if constraint_counts[lbl] == n_scenarios
-                    else "✗" if constraint_counts[lbl] == 0
-                    else "~",
+                _constraint_cls(lbl),
+                _constraint_sym(lbl),
                 lbl,
-                constraint_counts[lbl],
+                constraint_pass[lbl],
                 n_scenarios,
             )
             for lbl in constraint_labels
@@ -280,10 +342,26 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   word-break: break-word;
   line-height: 1.6;
 }}
-.constraint.implies           {{ color: var(--orange); }}
 .constraint.c-fail            {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
 .constraint.c-partial         {{ border-color: var(--orange); background: rgba(255,166,87,.08); color: var(--orange); }}
+.constraint.c-unexercised     {{ opacity: 0.4; }}
 .c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; }}
+
+/* ── Never-exercised gaps ────────────────────────────────── */
+.gaps-section {{
+  background: rgba(255,166,87,.08);
+  border: 1px solid var(--orange);
+  border-radius: 10px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+}}
+.gaps-title {{ font-weight: 700; color: var(--orange); margin-bottom: 6px; font-size: 14px; }}
+.gaps-desc  {{ font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }}
+.gaps-table {{ border-collapse: collapse; width: 100%; }}
+.gaps-table th {{ font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+                  color: var(--muted); padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; }}
+.gap-person {{ font-weight: 600; padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #21262d; white-space: nowrap; }}
+.gap-label  {{ font-family: var(--mono); font-size: 11px; color: var(--blue); padding: 6px 12px; border-bottom: 1px solid #21262d; }}
 .c-label  {{ flex: 1; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; }}
 .constraint {{ display: flex; align-items: center; }}
@@ -364,6 +442,8 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 </header>
 
 <div id="tooltip"></div>
+
+{gaps_html}
 
 {cards_html}
 
