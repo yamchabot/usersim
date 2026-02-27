@@ -18,7 +18,7 @@ const path = require('path');
 const APP_HTML = path.resolve(__dirname, '../../src/index.html');
 const MONITOR_JS = path.resolve(__dirname, 'monitor.js');
 
-const scenario = process.argv[2] || 'baseline';
+const scenario = process.argv[2] || process.env.USERSIM_SCENARIO || 'baseline';
 
 // ── Load sources ─────────────────────────────────────────────────────────────
 
@@ -385,7 +385,13 @@ const runner = scenarios[scenario] || scenarios.baseline;
 
 runner()
   .then(metrics => {
-    process.stdout.write(JSON.stringify(metrics, null, 2) + '\n');
+    const { scenario: _s, ...rest } = metrics;
+    const doc = {
+      schema:   'usersim.metrics.v1',
+      scenario: _s || scenario,
+      metrics:  rest,
+    };
+    process.stdout.write(JSON.stringify(doc, null, 2) + '\n');
   })
   .catch(err => {
     process.stderr.write(`[collect] error: ${err.message}\n${err.stack}\n`);

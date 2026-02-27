@@ -9,7 +9,7 @@ Perceptions return numbers. Judgements return booleans.
 """
 
 
-def compute(metrics, scenario, person):
+def compute(metrics, scenario=None, person=None):
     def get(key, default=0.0):
         v = metrics.get(key, default)
         return float(v) if v is not None else default
