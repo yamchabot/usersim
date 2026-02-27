@@ -19,6 +19,30 @@ If a later phase feels hard, it usually means an earlier phase was incomplete.
 
 ---
 
+## The Pipeline
+
+usersim has three layers. Each has a strict job and must not do the job of another.
+
+**Instrumentation** is the witness. It connects to the application — through whatever
+interface the application exposes — and records what happened. Raw counts, timings, state
+snapshots, emitted events. No interpretation. A witness who draws conclusions is out of
+order; instrumentation that computes answers has overstepped.
+
+**Perceptions** is the analyst. It reads the raw witness record and compresses it into
+meaningful signals: aggregations, ratios, derived quantities that no single measurement
+expresses alone. The analyst explains what the evidence means — still without rendering
+a verdict. A perception that returns a boolean has made a decision it shouldn't make.
+
+**Judgement** is the ruling. Z3 evaluates each user's constraints against the perceptions.
+Given what the analyst reported, was this person's standard met? Every boolean claim —
+"this was too slow", "this should never happen", "if X then Y must hold" — lives here and
+only here. This is where the constraint solver earns its place.
+
+The discipline: **stay in your lane.** Raw data belongs in instrumentation. Computation
+belongs in perceptions. Decisions belong in Z3.
+
+---
+
 ## Before You Start
 
 Explore the prototype. Read every source file. Understand what it does, what it stores,
@@ -92,12 +116,16 @@ and which persona benefit motivated each one.
 
 ### Step 6: Name the perceptions as verb phrases
 
-Perceptions are the layer between raw metrics and user judgements. Name each one as a verb
-phrase that describes what the function *does*:
+Perceptions are the analyst layer — they read the raw witness record and extract meaningful
+signals. Name each one as a verb phrase describing what the function does:
 
 - **detecting** — looks for presence or count of something (`detecting outbound activity`)
 - **measuring** — quantifies something experienced directly (`measuring write latency`)
 - **inferring** — composite derived from multiple metrics (`inferring trust posture`)
+
+The naming matters: it keeps perceptions honest about their role. An `inferring` perception
+is explicitly a derived signal, not a raw observation. A `detecting` perception is explicitly
+counting evidence, not deciding whether that evidence is acceptable.
 
 Do not put threshold comparisons in perceptions. Those belong in Z3 constraints.
 
@@ -137,15 +165,47 @@ listing which metrics it collects and what actions it performs.
 
 ### Step 10: Implement the instrumentation
 
-Create `user_simulation/instrumentation/` with:
+Instrumentation connects to the application through whatever interface it exposes. The
+interface depends entirely on what the application is:
 
-**Monitoring hooks** — code injected or loaded before the application runs. Intercepts
-storage reads/writes, outbound network calls, and timing events. Records everything into
-a shared in-memory structure the scenario runner can read after actions complete.
-This layer should be as passive as possible — observe, don't modify application behaviour.
+- **Browser app** — DOM queries, network interception, storage reads, timing APIs
+- **React or stateful frontend** — the app developer registers data with usersim via hooks
+  (see embedded hooks below), because internal component state is not queryable from outside
+- **Canvas or SVG rendering** — intercept the data going *into* the renderer, not the pixels
+  coming out; hook the draw calls or the data structures feeding them
+- **REST API or backend service** — an HTTP client making scripted requests, recording
+  response bodies, status codes, and latency
+- **Microcontroller or embedded device** — read from serial/UART, parse protocol frames,
+  record sensor values
+- **Kubernetes or distributed system** — query the metrics API, watch events, record
+  pod counts and error rates
+- **Bluetooth or radio protocol** — intercept the packet stream, log connection events
+  and payload content
 
-**Scenario runner** — loads the application, activates the monitoring hooks, performs the
-actions described in the plan, reads the recorded values, and writes a metrics document
+In all cases, instrumentation is a witness: it records what it observed without
+summarising, filtering, or deciding what matters. If you are not sure whether a data
+point is relevant, include it — the perceptions layer will decide.
+
+**Embedded hooks**
+
+When the application's internal state is not observable from outside — component trees,
+in-memory data structures, renderer inputs — the application developer adds small
+registration points that emit data to usersim:
+
+```js
+// In the application code:
+window.__usersim?.emit('habit_saved', { id, streak });
+window.__usersim?.register('habit_count', () => store.habits.length);
+```
+
+The instrumentation layer reads these emitted events and registered values. This keeps
+the hooks in the application thin (one line per data point) while letting instrumentation
+collect them without modifying application behaviour in any other way.
+
+**Scenario runner**
+
+The scenario runner loads the application, connects monitoring, performs the actions
+described in the plan, collects the recorded values, and writes a metrics document
 to stdout:
 
 ```json
@@ -159,22 +219,6 @@ to stdout:
 The scenario name comes from a command-line argument or environment variable
 (`USERSIM_SCENARIO`). One runner file should support all scenarios via a branch or
 dispatch table — not separate files per scenario.
-
-**Implementation guidance:**
-- Choose whatever runtime and automation approach matches the project's stack. A server-side
-  app might use an HTTP client. A browser app might use a headless browser or a DOM emulator.
-  A CLI tool might run as a subprocess. The usersim pipeline only requires that the runner
-  write valid `usersim.metrics.v1` JSON to stdout.
-- For browser apps without a display (CI, sandboxed environments): a DOM emulator that
-  supports JavaScript execution is sufficient for most instrumentation. Real browser testing
-  adds fidelity but is not required to get started.
-- Reload simulation: use a shared storage object across multiple DOM or browser instances
-  rather than actual page navigation when possible — it's faster and more deterministic.
-- Static analysis is often more reliable than runtime interception for structural properties
-  like external dependency counts. Parse the HTML source directly rather than intercepting
-  resource loads.
-- Offline simulation: the monitoring hook layer can reject all network calls — no need for
-  actual network manipulation.
 
 **Test each scenario independently before moving on:**
 ```
@@ -329,14 +373,17 @@ my-app/
 - **People first, metrics second.** The constraint system should feel like a natural
   expression of what a real person would care about — not a technical checklist.
 
-- **Measurements report. Judgements decide.** A metric says what happened.
-  A Z3 constraint says whether that is acceptable. Never conflate the two.
+- **Stay in your lane.** Instrumentation witnesses. Perceptions interprets. Z3 decides.
+  A layer that does another layer's job produces results that are harder to inspect,
+  harder to debug, and harder to trust.
 
-- **Booleans belong in Z3.** If you find yourself writing a boolean metric, convert it
-  to a count. The Z3 constraint `count == 0` is more expressive and composable.
+- **Booleans belong in Z3.** If you find yourself writing a boolean metric or a boolean
+  perception, convert it to a count or ratio. The Z3 constraint `count == 0` is more
+  expressive, composable, and auditable than a flag that was set somewhere upstream.
 
 - **Perceptions are verb phrases.** `detecting outbound activity`, `measuring write latency`,
-  `inferring trust posture`. The verb signals what kind of transformation it is.
+  `inferring trust posture`. The verb signals what kind of transformation it is and keeps
+  the analyst honest about what it is and isn't doing.
 
 - **Test the instrumentation before writing the constraints.** You cannot set good
   thresholds without seeing what the app actually produces.
