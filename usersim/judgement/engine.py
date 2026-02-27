@@ -253,9 +253,15 @@ def _load_persons(user_files: list, target_name: str | None = None) -> list:
     import importlib.util
     from .person import Person as PersonBase
 
+    import sys as _sys
     persons = []
     for path in user_files:
         path = Path(path)
+        # Add the file's directory to sys.path so it can import siblings
+        # (e.g. `from judgement import Person`) without being a package.
+        script_dir = str(path.parent)
+        if script_dir not in _sys.path:
+            _sys.path.insert(0, script_dir)
         spec = importlib.util.spec_from_file_location(path.stem, path)
         mod  = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
