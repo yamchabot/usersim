@@ -3,7 +3,8 @@ usersim CLI
 
 Primary usage — driven by usersim.yaml config file:
 
-    usersim run                        # reads usersim.yaml in cwd
+    usersim run                        # LLM-readable narrative output (default)
+    usersim run --matrix               # also print scenario×person grid
     usersim run --config path/to/usersim.yaml  # explicit config
     usersim run --scenario peak_load   # run one specific scenario
     usersim run --out results.json     # save results to file (also stdout)
@@ -51,7 +52,8 @@ def cmd_run(args):
         return 1
 
     if not args.quiet:
-        _print_summary(results, file=sys.stderr)
+        if args.matrix:
+            _print_summary(results, file=sys.stderr)
         _print_narrative(results, file=sys.stdout)
 
     return 0 if results["summary"]["score"] == 1.0 else 1
@@ -265,7 +267,8 @@ def main(argv=None):
         "--out", metavar="FILE",
         help="Save results JSON here (also written to stdout)",
     )
-    p_run.add_argument("--quiet",   action="store_true", help="Suppress human summary on stderr")
+    p_run.add_argument("--quiet",   action="store_true", help="Suppress all human output")
+    p_run.add_argument("--matrix", action="store_true", help="Print scenario×person grid (token-heavy; not for LLM pipelines)")
     p_run.add_argument("--verbose", action="store_true", help="Print stage info to stderr")
     p_run.set_defaults(func=cmd_run)
 
