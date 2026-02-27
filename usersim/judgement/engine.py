@@ -98,37 +98,42 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
 
     if not constraints:
         return {
-            "person":     person.name,
-            "role":       getattr(person, "role",    ""),
-            "goal":       getattr(person, "goal",    ""),
-            "pronoun":    getattr(person, "pronoun", "they"),
-            "satisfied":  True,
-            "score":      1.0,
-            "violations": [],
+            "person":      person.name,
+            "role":        getattr(person, "role",    ""),
+            "goal":        getattr(person, "goal",    ""),
+            "pronoun":     getattr(person, "pronoun", "they"),
+            "satisfied":   True,
+            "score":       1.0,
+            "constraints": [getattr(c, "_repr", None) or repr(c)
+                            for c in constraints],
+            "violations":  [],
         }
 
-    passed     = 0
-    violations = []
+    passed      = 0
+    violations  = []
+    all_labels  = []
     for i, c in enumerate(constraints):
+        label = getattr(c, "_repr", None) or repr(c) or f"constraint[{i}]"
+        all_labels.append(label)
         solver = Solver()
         solver.add(c)
         if solver.check() == sat:
             passed += 1
         else:
-            label = getattr(c, "_repr", None) or repr(c) or f"constraint[{i}]"
             violations.append(label)
 
     score     = passed / len(constraints)
     satisfied = len(violations) == 0
 
     return {
-        "person":     person.name,
-        "role":       getattr(person, "role",    ""),
-        "goal":       getattr(person, "goal",    ""),
-        "pronoun":    getattr(person, "pronoun", "they"),
-        "satisfied":  satisfied,
-        "score":      round(score, 4),
-        "violations": violations,
+        "person":      person.name,
+        "role":        getattr(person, "role",    ""),
+        "goal":        getattr(person, "goal",    ""),
+        "pronoun":     getattr(person, "pronoun", "they"),
+        "satisfied":   satisfied,
+        "score":       round(score, 4),
+        "constraints": all_labels,
+        "violations":  violations,
     }
 
 

@@ -23,9 +23,17 @@ try:
     _z3.BoolVal(True)
     from z3 import (
         Bool, BoolVal, Int, IntVal, Real, RealVal,
-        And, Or, Not, Implies, If,
+        And, Or, Not, If,
         Solver, sat, unsat,
     )
+    import z3 as _z3_mod
+
+    def Implies(a, b):
+        """Wrap z3.Implies and attach a human-readable _repr."""
+        expr = _z3_mod.Implies(a, b)
+        expr._repr = f"If {a}, then {b}"
+        return expr
+
     Z3_REAL = True
 
 except Exception:
@@ -44,9 +52,9 @@ except Exception:
         def __eq__(self, other):       return _binop(self, other, lambda a,b: a==b, "==")
         def __ne__(self, other):       return _binop(self, other, lambda a,b: a!=b, "!=")
         def __lt__(self, other):       return _binop(self, other, lambda a,b: a<b,  "<")
-        def __le__(self, other):       return _binop(self, other, lambda a,b: a<=b, "<=")
+        def __le__(self, other):       return _binop(self, other, lambda a,b: a<=b, "≤")
         def __gt__(self, other):       return _binop(self, other, lambda a,b: a>b,  ">")
-        def __ge__(self, other):       return _binop(self, other, lambda a,b: a>=b, ">=")
+        def __ge__(self, other):       return _binop(self, other, lambda a,b: a>=b, "≥")
         # Logical operators
         def __and__(self, other):      return And(self, other)
         def __or__(self, other):       return Or(self, other)
@@ -97,7 +105,8 @@ except Exception:
 
     def Implies(a, b):
         a, b = _lit(a), _lit(b)
-        return _Expr(lambda env, _a=a, _b=b: (not bool(_a(env))) or bool(_b(env)), f"Implies({a}, {b})")
+        return _Expr(lambda env, _a=a, _b=b: (not bool(_a(env))) or bool(_b(env)),
+                     f"If {a}, then {b}")
 
     def If(cond, then, else_):
         cond, then, else_ = _lit(cond), _lit(then), _lit(else_)

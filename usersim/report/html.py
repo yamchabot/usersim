@@ -62,9 +62,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
 
         # Pull metadata from first result that has it
         first = next((r for r in person_results if r), {})
-        role    = first.get("role",    "")
-        goal    = first.get("goal",    "")
-        pronoun = first.get("pronoun", "they")
+        role        = first.get("role",        "")
+        goal        = first.get("goal",        "")
+        pronoun     = first.get("pronoun",     "they")
+        constraints = first.get("constraints", [])
 
         card_cls = "all-pass" if all_ok else "some-fail"
         badge_cls = "badge-all" if all_ok else "badge-some"
@@ -96,6 +97,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
 
   <div class="constraints-panel">
     <div class="goal-text">{goal}</div>
+    <div class="constraints">
+      {"".join(
+          f'<div class="constraint{\' implies\' if c.lower().startswith(\'if \') else \'\'}">{c}</div>'
+          for c in constraints
+      )}
+    </div>
   </div>
 
   <div class="grid-panel">
@@ -223,6 +230,26 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   color: var(--muted);
   line-height: 1.5;
 }}
+
+.constraints {{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}}
+
+.constraint {{
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  color: var(--blue);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}}
+.constraint.implies {{ color: var(--orange); }}
 
 .grid-panel {{
   padding: 16px 16px 14px;
