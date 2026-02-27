@@ -34,12 +34,14 @@ def _make_fact_vars(facts: dict) -> dict:
     - str       → BoolVal for "true"/"false", else ignored
     """
     vars_ = {}
+    assignments = {}  # name → value, for solver assertions when using real Z3
     for name, value in facts.items():
         safe = name.replace("-", "_").replace(".", "_")
         if isinstance(value, bool):
             vars_[safe] = BoolVal(value)
         elif isinstance(value, (int, float)):
-            vars_[safe] = _named_real_val(safe, float(value))
+            vars_[safe] = _named_real_var(safe, float(value))
+            assignments[safe] = float(value)
             # Convenience: Bool alias for 0/1 metrics
             if value in (0, 1, 0.0, 1.0):
                 vars_[safe + "_bool"] = BoolVal(bool(value))
@@ -49,25 +51,22 @@ def _make_fact_vars(facts: dict) -> dict:
                 vars_[safe] = BoolVal(True)
             elif lower in ("false", "no", "0"):
                 vars_[safe] = BoolVal(False)
+    vars_["_assignments"] = assignments
     return vars_
 
 
-def _named_real_val(name: str, value: float):
+def _named_real_var(name: str, value: float):
     """
-    A real value whose repr is the variable name rather than the numeric value.
+    Return a fact variable whose repr is the variable name.
 
-    In the pure-Python fallback: repr = name → violations say "(x >= 0.9)"
-    With real Z3: falls back to RealVal (repr = numeric string).
-    Infinity values are clamped to a large finite sentinel (Z3 can't parse inf).
+    Pure-Python shim: returns an _Expr with repr=name, evaluates to value.
+    Real Z3: returns a symbolic Real(name) — the actual value is injected
+             into the solver via _assignments so constraints stay symbolic.
     """
     if not Z3_REAL:
         from . import z3_compat as _zc
         return _zc._Expr(lambda env, _v=value: _v, name)
-    import math
-    if math.isinf(value) or math.isnan(value):
-        # Use a large sentinel: +inf → 1e9, -inf → -1e9
-        value = math.copysign(1e9, value)
-    return RealVal(value)
+    return Real(name)
 
 
 def evaluate_person(person: "Person", facts: dict) -> dict:
@@ -109,6 +108,10 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
             "violations":  [],
         }
 
+    # When using real Z3, inject variable assignments so symbolic constraints
+    # evaluate correctly (Real("x") == 1.0 added per variable).
+    assignments = fact_vars.pop("_assignments", {})
+
     passed      = 0
     violations  = []
     all_labels  = []
@@ -116,6 +119,12 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
         label = getattr(c, "_repr", None) or repr(c) or f"constraint[{i}]"
         all_labels.append(label)
         solver = Solver()
+        if Z3_REAL and assignments:
+            import math
+            for var_name, val in assignments.items():
+                if math.isinf(val) or math.isnan(val):
+                    val = math.copysign(1e9, val)
+                solver.add(Real(var_name) == val)
         solver.add(c)
         if solver.check() == sat:
             passed += 1
