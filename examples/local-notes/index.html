@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Notes</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #1a1a1a;
+      --surface: #242424;
+      --surface2: #2e2e2e;
+      --border: #3a3a3a;
+      --accent: #f0a500;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --danger: #c0392b;
+      --sidebar-w: 220px;
+      --list-w: 260px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      height: 48px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    #topbar h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.03em; color: var(--accent); }
+    #topbar .spacer { flex: 1; }
+
+    /* ── Layout ── */
+    #main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Notebooks sidebar ── */
+    #notebooks-panel {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header button {
+      margin-left: auto;
+      background: none;
+      border: none;
+      color: var(--accent);
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 2px;
+    }
+    .panel-header button:hover { opacity: 0.7; }
+
+    #notebooks-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .notebook-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+      gap: 8px;
+      border-radius: 0;
+      transition: background 0.1s;
+    }
+    .notebook-item:hover { background: var(--surface2); }
+    .notebook-item.active { background: var(--surface2); color: var(--accent); }
+    .notebook-item .nb-icon { font-size: 14px; flex-shrink: 0; }
+    .notebook-item .nb-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .notebook-item .nb-del {
+      opacity: 0;
+      background: none;
+      border: none;
+      color: var(--danger);
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+    .notebook-item:hover .nb-del { opacity: 1; }
+
+    /* ── Notes list ── */
+    #notes-panel {
+      width: var(--list-w);
+      background: var(--surface2);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    #notes-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .note-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.1s;
+    }
+    .note-item:hover { background: #353535; }
+    .note-item.active { background: #3a3a3a; border-left: 3px solid var(--accent); }
+    .note-item .note-title {
+      font-size: 13px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-bottom: 3px;
+    }
+    .note-item .note-preview {
+      font-size: 11px;
+      color: var(--text-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .note-item .note-date {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+    .note-empty {
+      padding: 24px 14px;
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    /* ── Editor ── */
+    #editor-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #editor-toolbar {
+      display: flex;
+      align-items: center;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    #editor-toolbar button {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 4px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.1s;
+    }
+    #editor-toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+    #editor-toolbar button.danger:hover { border-color: var(--danger); color: var(--danger); }
+    #editor-toolbar .spacer { flex: 1; }
+    #save-indicator { font-size: 11px; color: var(--text-dim); }
+
+    #note-title-input {
+      background: none;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 700;
+      padding: 16px 20px;
+      outline: none;
+      flex-shrink: 0;
+    }
+    #note-title-input::placeholder { color: var(--text-dim); }
+
+    #note-body-input {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.7;
+      padding: 16px 20px;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+    }
+    #note-body-input::placeholder { color: var(--text-dim); }
+
+    #no-selection {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      font-size: 14px;
+      gap: 8px;
+    }
+    #no-selection .big { font-size: 40px; }
+
+    /* ── Modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      min-width: 320px;
+    }
+    #modal h2 { font-size: 15px; margin-bottom: 16px; }
+    #modal input {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 14px;
+      outline: none;
+      margin-bottom: 16px;
+    }
+    #modal input:focus { border-color: var(--accent); }
+    #modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    #modal .modal-actions button {
+      padding: 6px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      border: none;
+    }
+    #modal-cancel { background: var(--surface2); color: var(--text); }
+    #modal-confirm { background: var(--accent); color: #000; font-weight: 600; }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>📝 Local Notes</h1>
+  <div class="spacer"></div>
+</div>
+
+<div id="main">
+
+  <!-- Notebooks -->
+  <div id="notebooks-panel">
+    <div class="panel-header">
+      Notebooks
+      <button id="btn-new-notebook" title="New notebook">+</button>
+    </div>
+    <div id="notebooks-list"></div>
+  </div>
+
+  <!-- Notes list -->
+  <div id="notes-panel">
+    <div class="panel-header">
+      <span id="notes-panel-title">Notes</span>
+      <button id="btn-new-note" title="New note">+</button>
+    </div>
+    <div id="notes-list"></div>
+  </div>
+
+  <!-- Editor -->
+  <div id="editor-panel">
+    <div id="no-selection">
+      <div class="big">📄</div>
+      <div>Select or create a note</div>
+    </div>
+    <div id="editor" style="display:none; flex:1; display:none; flex-direction:column; overflow:hidden;">
+      <div id="editor-toolbar">
+        <span id="save-indicator"></span>
+        <div class="spacer"></div>
+        <button id="btn-delete-note" class="danger">Delete note</button>
+      </div>
+      <input id="note-title-input" type="text" placeholder="Note title…" />
+      <textarea id="note-body-input" placeholder="Start writing…"></textarea>
+    </div>
+  </div>
+
+</div>
+
+<!-- Modal -->
+<div id="modal-overlay">
+  <div id="modal">
+    <h2 id="modal-title">New Notebook</h2>
+    <input id="modal-input" type="text" placeholder="Notebook name…" />
+    <div class="modal-actions">
+      <button id="modal-cancel">Cancel</button>
+      <button id="modal-confirm">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Storage helpers ──────────────────────────────────────────────────────────
+
+const NOTEBOOKS_KEY = 'ln:notebooks';
+const ACTIVE_NB_KEY = 'ln:activeNotebook';
+const ACTIVE_NOTE_KEY = 'ln:activeNote';
+
+function notesKey(nbId) { return `ln:notes:${nbId}`; }
+
+function loadNotebooks() {
+  return JSON.parse(localStorage.getItem(NOTEBOOKS_KEY) || '[]');
+}
+function saveNotebooks(nbs) {
+  localStorage.setItem(NOTEBOOKS_KEY, JSON.stringify(nbs));
+}
+function loadNotes(nbId) {
+  return JSON.parse(localStorage.getItem(notesKey(nbId)) || '[]');
+}
+function saveNotes(nbId, notes) {
+  localStorage.setItem(notesKey(nbId), JSON.stringify(notes));
+}
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+function fmtDate(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let activeNotebookId = localStorage.getItem(ACTIVE_NB_KEY) || null;
+let activeNoteId = localStorage.getItem(ACTIVE_NOTE_KEY) || null;
+let saveTimer = null;
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+
+const notebooksList  = document.getElementById('notebooks-list');
+const notesList      = document.getElementById('notes-list');
+const notesPanelTitle = document.getElementById('notes-panel-title');
+const noSelection    = document.getElementById('no-selection');
+const editor         = document.getElementById('editor');
+const titleInput     = document.getElementById('note-title-input');
+const bodyInput      = document.getElementById('note-body-input');
+const saveIndicator  = document.getElementById('save-indicator');
+const modalOverlay   = document.getElementById('modal-overlay');
+const modalTitle     = document.getElementById('modal-title');
+const modalInput     = document.getElementById('modal-input');
+
+// ── Render notebooks ─────────────────────────────────────────────────────────
+
+function renderNotebooks() {
+  const nbs = loadNotebooks();
+  notebooksList.innerHTML = '';
+  if (nbs.length === 0) {
+    notebooksList.innerHTML = '<div class="note-empty">No notebooks yet</div>';
+    return;
+  }
+  nbs.forEach(nb => {
+    const el = document.createElement('div');
+    el.className = 'notebook-item' + (nb.id === activeNotebookId ? ' active' : '');
+    el.innerHTML = `
+      <span class="nb-icon">📓</span>
+      <span class="nb-name">${escHtml(nb.name)}</span>
+      <button class="nb-del" title="Delete notebook" data-id="${nb.id}">✕</button>
+    `;
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('nb-del')) return;
+      selectNotebook(nb.id);
+    });
+    el.querySelector('.nb-del').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm(`Delete notebook "${nb.name}" and all its notes?`)) {
+        deleteNotebook(nb.id);
+      }
+    });
+    notebooksList.appendChild(el);
+  });
+}
+
+// ── Render notes ─────────────────────────────────────────────────────────────
+
+function renderNotes() {
+  notesList.innerHTML = '';
+  if (!activeNotebookId) {
+    notesList.innerHTML = '<div class="note-empty">Select a notebook</div>';
+    return;
+  }
+  const notes = loadNotes(activeNotebookId);
+  const nb = loadNotebooks().find(n => n.id === activeNotebookId);
+  notesPanelTitle.textContent = nb ? nb.name : 'Notes';
+
+  if (notes.length === 0) {
+    notesList.innerHTML = '<div class="note-empty">No notes yet</div>';
+    return;
+  }
+  // Sort newest first
+  const sorted = [...notes].sort((a, b) => b.updatedAt - a.updatedAt);
+  sorted.forEach(note => {
+    const el = document.createElement('div');
+    el.className = 'note-item' + (note.id === activeNoteId ? ' active' : '');
+    el.innerHTML = `
+      <div class="note-title">${escHtml(note.title || 'Untitled')}</div>
+      <div class="note-preview">${escHtml(note.body.slice(0, 80) || '—')}</div>
+      <div class="note-date">${fmtDate(note.updatedAt)}</div>
+    `;
+    el.addEventListener('click', () => selectNote(note.id));
+    notesList.appendChild(el);
+  });
+}
+
+// ── Render editor ─────────────────────────────────────────────────────────────
+
+function renderEditor() {
+  if (!activeNoteId || !activeNotebookId) {
+    noSelection.style.display = 'flex';
+    editor.style.display = 'none';
+    return;
+  }
+  const notes = loadNotes(activeNotebookId);
+  const note = notes.find(n => n.id === activeNoteId);
+  if (!note) {
+    noSelection.style.display = 'flex';
+    editor.style.display = 'none';
+    return;
+  }
+  noSelection.style.display = 'none';
+  editor.style.display = 'flex';
+  editor.style.flexDirection = 'column';
+  editor.style.overflow = 'hidden';
+  editor.style.flex = '1';
+
+  titleInput.value = note.title;
+  bodyInput.value = note.body;
+  saveIndicator.textContent = '';
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+
+function selectNotebook(id) {
+  activeNotebookId = id;
+  activeNoteId = null;
+  localStorage.setItem(ACTIVE_NB_KEY, id);
+  localStorage.removeItem(ACTIVE_NOTE_KEY);
+  renderNotebooks();
+  renderNotes();
+  renderEditor();
+}
+
+function selectNote(id) {
+  activeNoteId = id;
+  localStorage.setItem(ACTIVE_NOTE_KEY, id);
+  renderNotes();
+  renderEditor();
+  bodyInput.focus();
+}
+
+function createNotebook(name) {
+  const nbs = loadNotebooks();
+  const nb = { id: uid(), name: name.trim(), createdAt: Date.now() };
+  nbs.push(nb);
+  saveNotebooks(nbs);
+  selectNotebook(nb.id);
+}
+
+function deleteNotebook(id) {
+  let nbs = loadNotebooks();
+  nbs = nbs.filter(n => n.id !== id);
+  saveNotebooks(nbs);
+  localStorage.removeItem(notesKey(id));
+  if (activeNotebookId === id) {
+    activeNotebookId = nbs[0]?.id || null;
+    activeNoteId = null;
+    if (activeNotebookId) localStorage.setItem(ACTIVE_NB_KEY, activeNotebookId);
+    else localStorage.removeItem(ACTIVE_NB_KEY);
+    localStorage.removeItem(ACTIVE_NOTE_KEY);
+  }
+  renderNotebooks();
+  renderNotes();
+  renderEditor();
+}
+
+function createNote() {
+  if (!activeNotebookId) return;
+  const notes = loadNotes(activeNotebookId);
+  const note = { id: uid(), title: '', body: '', createdAt: Date.now(), updatedAt: Date.now() };
+  notes.unshift(note);
+  saveNotes(activeNotebookId, notes);
+  activeNoteId = note.id;
+  localStorage.setItem(ACTIVE_NOTE_KEY, note.id);
+  renderNotes();
+  renderEditor();
+  titleInput.focus();
+}
+
+function deleteActiveNote() {
+  if (!activeNoteId || !activeNotebookId) return;
+  let notes = loadNotes(activeNotebookId);
+  notes = notes.filter(n => n.id !== activeNoteId);
+  saveNotes(activeNotebookId, notes);
+  activeNoteId = notes[0]?.id || null;
+  if (activeNoteId) localStorage.setItem(ACTIVE_NOTE_KEY, activeNoteId);
+  else localStorage.removeItem(ACTIVE_NOTE_KEY);
+  renderNotes();
+  renderEditor();
+}
+
+function saveActiveNote() {
+  if (!activeNoteId || !activeNotebookId) return;
+  const notes = loadNotes(activeNotebookId);
+  const note = notes.find(n => n.id === activeNoteId);
+  if (!note) return;
+  note.title = titleInput.value;
+  note.body = bodyInput.value;
+  note.updatedAt = Date.now();
+  saveNotes(activeNotebookId, notes);
+  saveIndicator.textContent = 'Saved';
+  setTimeout(() => { saveIndicator.textContent = ''; }, 1500);
+  renderNotes();
+}
+
+function scheduleSave() {
+  saveIndicator.textContent = 'Saving…';
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveActiveNote, 600);
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+
+let modalResolve = null;
+
+function openModal(title, placeholder, confirmText = 'Create') {
+  return new Promise(resolve => {
+    modalResolve = resolve;
+    modalTitle.textContent = title;
+    modalInput.value = '';
+    modalInput.placeholder = placeholder;
+    document.getElementById('modal-confirm').textContent = confirmText;
+    modalOverlay.classList.add('open');
+    setTimeout(() => modalInput.focus(), 50);
+  });
+}
+
+function closeModal(value) {
+  modalOverlay.classList.remove('open');
+  if (modalResolve) modalResolve(value);
+  modalResolve = null;
+}
+
+document.getElementById('modal-cancel').addEventListener('click', () => closeModal(null));
+document.getElementById('modal-confirm').addEventListener('click', () => closeModal(modalInput.value.trim()));
+modalInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') closeModal(modalInput.value.trim());
+  if (e.key === 'Escape') closeModal(null);
+});
+modalOverlay.addEventListener('click', e => { if (e.target === modalOverlay) closeModal(null); });
+
+// ── Event listeners ───────────────────────────────────────────────────────────
+
+document.getElementById('btn-new-notebook').addEventListener('click', async () => {
+  const name = await openModal('New Notebook', 'Notebook name…');
+  if (name) createNotebook(name);
+});
+
+document.getElementById('btn-new-note').addEventListener('click', () => {
+  if (!activeNotebookId) return;
+  createNote();
+});
+
+document.getElementById('btn-delete-note').addEventListener('click', () => {
+  if (confirm('Delete this note?')) deleteActiveNote();
+});
+
+titleInput.addEventListener('input', scheduleSave);
+bodyInput.addEventListener('input', scheduleSave);
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+    e.preventDefault();
+    saveActiveNote();
+  }
+});
+
+// ── Util ──────────────────────────────────────────────────────────────────────
+
+function escHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+(function init() {
+  const nbs = loadNotebooks();
+  // Seed with a default notebook if empty
+  if (nbs.length === 0) {
+    const nb = { id: uid(), name: 'My Notes', createdAt: Date.now() };
+    saveNotebooks([nb]);
+    activeNotebookId = nb.id;
+    localStorage.setItem(ACTIVE_NB_KEY, nb.id);
+  } else if (!activeNotebookId || !nbs.find(n => n.id === activeNotebookId)) {
+    activeNotebookId = nbs[0].id;
+    localStorage.setItem(ACTIVE_NB_KEY, activeNotebookId);
+  }
+  // Validate active note still exists
+  if (activeNoteId && activeNotebookId) {
+    const notes = loadNotes(activeNotebookId);
+    if (!notes.find(n => n.id === activeNoteId)) {
+      activeNoteId = null;
+      localStorage.removeItem(ACTIVE_NOTE_KEY);
+    }
+  }
+  renderNotebooks();
+  renderNotes();
+  renderEditor();
+})();
+</script>
+</body>
+</html>
