@@ -117,15 +117,21 @@ def _print_summary(results: dict, file=sys.stderr) -> None:
         scenarios = sorted({r["scenario"] for r in results.get("results", [])})
         result_map = {(r["person"], r["scenario"]): r for r in results.get("results", [])}
 
-        col_w = max((len(s) for s in scenarios), default=8) + 2
-        print(f"\n{'':20}", end="", file=file)
-        for s in scenarios:
-            print(f"  {s:>{col_w}}", end="", file=file)
-        print(file=file)
-        print("─" * (20 + (col_w + 2) * len(scenarios)), file=file)
+        # Scenarios as rows, persons as columns (fewer persons than scenarios)
+        row_w = max((len(s) for s in scenarios), default=8)
+        col_w = max((len(p) for p in persons),   default=6) + 2
+
+        # Header: person names
+        print(f"\n{'':>{row_w}}", end="", file=file)
         for p in persons:
-            print(f"  {p:18}", end="", file=file)
-            for s in scenarios:
+            print(f"  {p:>{col_w}}", end="", file=file)
+        print(file=file)
+        print("─" * (row_w + (col_w + 2) * len(persons)), file=file)
+
+        # One row per scenario
+        for s in scenarios:
+            print(f"  {s:<{row_w}}", end="", file=file)
+            for p in persons:
                 r = result_map.get((p, s))
                 sym = ("✓" if r["satisfied"] else "✗") if r else "─"
                 print(f"  {sym:>{col_w}}", end="", file=file)
