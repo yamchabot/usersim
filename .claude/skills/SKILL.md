@@ -147,6 +147,10 @@ between the planning documents and the code you will write next.
 
 ## Phase 4 — Instrumentation
 
+> **Web project?** If the application runs in a browser, read `.claude/skills/web.md`
+> before implementing this phase. It provides a ready-made scenario runner and page
+> automation API so you don't have to write that boilerplate yourself.
+
 ### Step 9: Plan the scenarios
 
 For each perception, describe what the instrumentation would actually do to collect its
