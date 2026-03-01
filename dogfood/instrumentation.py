@@ -390,7 +390,168 @@ def measure_full_integration():
         "report_is_self_contained": report_metrics["report_is_self_contained"],
     })
 
+    # 6. Violation health ───────────────────────────────────────────────────
+    vh_metrics = measure_violation_health()
+    metrics.update(vh_metrics)
+
+    # 7. Broken example ─────────────────────────────────────────────────────
+    broken_metrics = measure_broken_example()
+    metrics.update(broken_metrics)
+
     return metrics
+
+
+# ── Scenario: violation_health ────────────────────────────────────────────────
+
+def measure_violation_health():
+    """
+    Run data-processor and introspect the results to measure constraint health.
+
+    A useful constraint system should have *some* violations — constraints that
+    never fire across all runs are either too loose or testing the wrong thing.
+    This scenario measures the violation rate of usersim against itself.
+    """
+    dp_dir = PROJECT_ROOT / "examples" / "data-processor"
+    out_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    out_file.close()
+
+    try:
+        _run(
+            [USERSIM, "run",
+             "--config", str(dp_dir / "usersim.yaml"),
+             "--out", out_file.name],
+            cwd=str(dp_dir),
+        )
+
+        try:
+            with open(out_file.name) as f:
+                data = json.load(f)
+        except Exception:
+            return {
+                "vh_total_constraint_evals": 0,
+                "vh_total_violations": 0,
+                "vh_unique_constraints": 0,
+                "vh_violated_constraints": 0,
+                "vh_antecedent_fired_count": 0,
+            }
+
+        # Walk every persona × scenario result and count constraint outcomes
+        # Results are flat: one dict per persona×scenario combination
+        total_evals = 0
+        total_violations = 0
+        antecedent_fired = 0
+        all_constraints = set()
+        violated_constraints = set()
+
+        for row in data.get("results", []):
+            for c in row.get("constraints", []):
+                label = c.get("label", "")
+                all_constraints.add(label)
+                total_evals += 1
+                if c.get("antecedent_fired", True):
+                    antecedent_fired += 1
+                if not c.get("passed", True):
+                    total_violations += 1
+                    violated_constraints.add(label)
+
+        return {
+            "vh_total_constraint_evals": total_evals,
+            "vh_total_violations": total_violations,
+            "vh_unique_constraints": len(all_constraints),
+            "vh_violated_constraints": len(violated_constraints),
+            "vh_antecedent_fired_count": antecedent_fired,
+        }
+    finally:
+        try:
+            os.unlink(out_file.name)
+        except OSError:
+            pass
+
+
+# ── Scenario: broken_example ──────────────────────────────────────────────────
+
+def measure_broken_example():
+    """
+    Run usersim with an intentionally broken instrumentation script that exits
+    non-zero and emits no valid JSON.  Measures that usersim detects and
+    surfaces the failure rather than silently producing empty results.
+    """
+    import textwrap
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        # Write a deliberately broken instrumentation script
+        broken_script = tmpdir / "broken_instr.py"
+        broken_script.write_text(textwrap.dedent("""\
+            import sys, json
+            # Emit partial metrics then exit 1 — simulates a crash mid-run
+            print(json.dumps({
+                "schema": "usersim.metrics.v1",
+                "scenario": "broken",
+                "metrics": {
+                    "exit_code": 1,
+                    "wall_clock_ms": 50,
+                }
+            }))
+            sys.exit(1)
+        """))
+
+        # Minimal user file
+        user_file = tmpdir / "broken_user.py"
+        user_file.write_text(textwrap.dedent("""\
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'usersim'))
+            from usersim import Person
+            class BrokenUser(Person):
+                name = "broken_user"
+                role = "tester"
+                goal = "detect instrumentation failures"
+                pronoun = "they"
+                def constraints(self, P):
+                    return []
+        """))
+
+        # Config pointing at the broken script
+        config = tmpdir / "broken.yaml"
+        config.write_text(textwrap.dedent(f"""\
+            instrumentation: "python3 {broken_script}"
+            scenarios:
+              - broken
+            users:
+              - {user_file}
+            output: "{tmpdir}/broken_results.json"
+        """))
+
+        result = _run(
+            [USERSIM, "run", "--config", str(config)],
+            cwd=str(tmpdir),
+        )
+
+        # Read output if it exists
+        out_path = tmpdir / "broken_results.json"
+        ran_ok = False
+        caught_failure = False
+        try:
+            with open(out_path) as f:
+                out = json.load(f)
+            ran_ok = True
+            # usersim should report a non-zero exit in summary or an error field
+            summary = out.get("summary", {})
+            caught_failure = (
+                summary.get("exit_code", 0) != 0
+                or out.get("error") is not None
+                or summary.get("passed", 1) == 0
+            )
+        except Exception:
+            # If usersim itself exited non-zero that's also a valid failure detection
+            caught_failure = result.returncode != 0
+
+        return {
+            "broken_instr_exit_code": result.returncode,
+            "broken_ran_to_completion": ran_ok,
+            "broken_failure_detected": caught_failure,
+        }
 
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
@@ -402,6 +563,8 @@ DISPATCH = {
     "judge_standalone": measure_judge_standalone,
     "report_generation": measure_report_generation,
     "full_integration": measure_full_integration,
+    "violation_health": measure_violation_health,
+    "broken_example": measure_broken_example,
 }
 
 if __name__ == "__main__":

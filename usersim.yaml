@@ -26,6 +26,10 @@ scenarios:
     description: "Generate HTML report from known results — verify valid self-contained HTML"
   - name: full_integration
     description: "All subsystems in one pass — ensures every persona constraint fires with a real value (no vacuous antecedents)"
+  - name: violation_health
+    description: "Run data-processor and introspect its results — measures whether usersim's own constraints are doing useful work (healthy churn, not vacuous)"
+  - name: broken_example
+    description: "Intentionally broken instrumentation script — verifies usersim detects and surfaces the failure rather than swallowing it silently"
 
 output:
   results: dogfood/results.json

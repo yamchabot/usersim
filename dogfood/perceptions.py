@@ -70,6 +70,21 @@ def compute(metrics: dict, **_) -> dict:
         "report_has_doctype":       flag("report_has_doctype"),
         "report_has_cards":         flag("report_has_cards"),
         "report_is_self_contained": flag("report_is_self_contained"),
+
+        # ── Violation health (violation_health) ──────────────────────────
+        # Measures usersim's own constraint churn — are constraints doing work?
+        "vh_total_evals":           num("vh_total_constraint_evals", -1),
+        "vh_total_violations":      num("vh_total_violations", -1),
+        "vh_unique_constraints":    num("vh_unique_constraints", -1),
+        "vh_violated_constraints":  num("vh_violated_constraints", -1),
+        "vh_antecedent_fired":      num("vh_antecedent_fired_count", -1),
+
+        # ── Broken example (broken_example) ──────────────────────────────
+        # Verifies usersim surfaces instrumentation failures rather than
+        # silently producing empty or incorrect results.
+        "broken_exit_code":         num("broken_instr_exit_code", -1),
+        "broken_ran_to_completion": flag("broken_ran_to_completion"),
+        "broken_failure_detected":  flag("broken_failure_detected"),
     }
 
 
