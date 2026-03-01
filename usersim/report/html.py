@@ -610,15 +610,15 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 }}
 .vim-head {{
   color: var(--muted); font-size: 10px; text-transform: uppercase;
-  letter-spacing: .06em; vertical-align: bottom; padding-bottom: 6px !important;
+  letter-spacing: .06em; vertical-align: bottom; padding: 0 4px 6px !important;
 }}
 .vim-head span {{
-  display: inline-block;
-  transform: rotate(-60deg);
-  transform-origin: bottom left;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  display: block;
   white-space: nowrap;
-  width: 1.2em;
-  padding-bottom: 4px;
+  padding-top: 4px;
 }}
 .vim-cell {{
   color: var(--fg); font-size: 11px; border-left: 1px solid #21262d;
