@@ -146,7 +146,10 @@ def _print_summary(results: dict, file=sys.stderr) -> None:
             viol = f" — {r['violations'][0]}" if r.get("violations") else ""
             print(f"  {sym} {r['person']:20} score={r['score']:.3f}{viol}", file=file)
 
-    print(f"\n  {satisfied}/{total} satisfied  (score {score:.1%})\n", file=file)
+    eff   = summary.get("effective_tests",  0)
+    evals = summary.get("constraint_evals", 0)
+    eff_str = f"  ⚡ ~{eff:,} effective tests  ({evals} constraint evals × 4^k)\n" if eff else ""
+    print(f"\n  {satisfied}/{total} satisfied  (score {score:.1%})\n{eff_str}", file=file)
 
 
 def _print_narrative(results: dict, file=sys.stdout) -> None:

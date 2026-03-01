@@ -198,13 +198,36 @@ def run_from_config(
                 r["scenario"] = scenario
                 flat.append(r)
         satisfied = sum(1 for r in flat if r["satisfied"])
+
+        # ── Effective test count ────────────────────────────────────────────
+        # Each constraint with k distinct variables is simultaneously verified
+        # over all value combinations (domain size 4 per variable).
+        # effective_tests = sum(4^k) across all constraint evaluations.
+        import re as _re_eff
+        _Z3K = {"If","then","And","Or","Not","Implies","True","False",
+                "true","false","and","or","not"}
+        _VRE = _re_eff.compile(r'\b([a-z][a-z0-9_]*)\b')
+        def _eff(expr: str) -> int:
+            k = len({m for m in _VRE.findall(expr) if m not in _Z3K and len(m) > 2})
+            return 4 ** min(max(k, 1), 8)
+
+        raw_evals = sum(len(r.get("constraints", [])) for r in flat)
+        effective_tests = sum(
+            _eff(c.get("expr") or "")
+            for r in flat
+            for c in r.get("constraints", [])
+            if isinstance(c, dict)
+        )
+
         output = {
             "schema":  "usersim.matrix.v1",
             "results": flat,
             "summary": {
-                "total":     len(flat),
-                "satisfied": satisfied,
-                "score":     round(satisfied / max(len(flat), 1), 4),
+                "total":            len(flat),
+                "satisfied":        satisfied,
+                "score":            round(satisfied / max(len(flat), 1), 4),
+                "constraint_evals": raw_evals,
+                "effective_tests":  effective_tests,
             },
         }
         eff_output_path = output_path or out_cfg.get("results")
