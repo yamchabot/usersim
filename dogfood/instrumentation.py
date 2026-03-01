@@ -5,7 +5,7 @@ Runs usersim CLI commands as subprocesses against the bundled examples
 and edge cases, collecting metrics about exit codes, output validity,
 timing, error handling, and report quality.
 
-USERSIM_SCENARIO controls which measurement function runs.
+USERSIM_PATH controls which measurement function runs.
 """
 import json
 import os
@@ -16,15 +16,29 @@ import tempfile
 import time
 from pathlib import Path
 
-SCENARIO = os.environ.get("USERSIM_SCENARIO", "data_processor_example")
+SCENARIO = os.environ.get("USERSIM_PATH", "data_processor_example")
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-USERSIM = shutil.which("usersim") or "usersim"
+USERSIM = shutil.which("usersim") or str(
+    next(
+        (p for p in [
+            Path(sys.executable).parent / "usersim",
+            Path.home() / ".local" / "bin" / "usersim",
+            Path("/workspace/.local/bin/usersim"),
+        ] if p.exists()),
+        "usersim"
+    )
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _run(args, *, stdin_data=None, cwd=None, timeout=120):
-    """Run a subprocess and return the CompletedProcess."""
+    """Run a subprocess and return the CompletedProcess.
+
+    Always strips USERSIM_PATH from the subprocess environment so sub-runs
+    are not inadvertently pinned to the current dogfood measurement path.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "USERSIM_PATH"}
     return subprocess.run(
         args,
         input=stdin_data,
@@ -32,6 +46,7 @@ def _run(args, *, stdin_data=None, cwd=None, timeout=120):
         text=True,
         cwd=cwd or str(PROJECT_ROOT),
         timeout=timeout,
+        env=env,
     )
 
 
@@ -82,11 +97,11 @@ def measure_data_processor_example():
         summary = data.get("summary", {})
 
         persons = set()
-        scenarios = set()
+        paths = set()
         all_have_constraints = True
         for r in results:
             persons.add(r.get("person", ""))
-            scenarios.add(r.get("scenario", ""))
+            paths.add(r.get("path", ""))
             if "constraints" not in r:
                 all_have_constraints = False
 
@@ -101,7 +116,7 @@ def measure_data_processor_example():
             "results_satisfied": summary.get("satisfied", 0),
             "results_score": summary.get("score", 0.0),
             "person_count": len(persons),
-            "scenario_count": len(scenarios),
+            "scenario_count": len(paths),
             "all_constraints_present": all_have_constraints and len(results) > 0,
             "stderr_output": len(result.stderr.strip()) > 0,
         }
@@ -171,7 +186,7 @@ def measure_bad_config():
             'perceptions: "echo {}"\n'
             'users:\n'
             '  - nonexistent_dir/*.py\n'
-            'scenarios:\n'
+            'paths:\n'
             '  - default\n'
         )
         r_no_users = _run(
@@ -202,7 +217,7 @@ def measure_judge_standalone():
         # Create a synthetic perceptions JSON
         perc = {
             "schema": "usersim.perceptions.v1",
-            "scenario": "test",
+            "path": "test",
             "person": "all",
             "facts": {
                 "response_ms": 50.0,
@@ -254,13 +269,13 @@ def measure_report_generation():
     with tempfile.TemporaryDirectory(prefix="usersim_dogfood_report_") as tmp:
         tmp_path = Path(tmp)
 
-        # Create a known-good results JSON (matrix format — each result has "scenario")
+        # Create a known-good results JSON (matrix format — each result has "path")
         results_data = {
             "schema": "usersim.matrix.v1",
             "results": [
                 {
                     "person": "happy_user",
-                    "scenario": "normal",
+                    "path": "normal",
                     "role": "Tester",
                     "goal": "Verify report generation",
                     "pronoun": "they",
@@ -273,7 +288,7 @@ def measure_report_generation():
                 },
                 {
                     "person": "sad_user",
-                    "scenario": "normal",
+                    "path": "normal",
                     "role": "Tester",
                     "goal": "Verify failure reporting",
                     "pronoun": "they",
@@ -321,7 +336,7 @@ def measure_full_integration():
     """
     Run all subsystems in a single pass and return a complete metric set.
 
-    This scenario exists to ensure every persona constraint has a real value
+    This path exists to ensure every persona constraint has a real value
     to evaluate against — no vacuous antecedents from missing metrics.
 
     It combines: pipeline run + init scaffold + error handling +
@@ -409,7 +424,7 @@ def measure_violation_health():
 
     A useful constraint system should have *some* violations — constraints that
     never fire across all runs are either too loose or testing the wrong thing.
-    This scenario measures the violation rate of usersim against itself.
+    This path measures the violation rate of usersim against itself.
     """
     dp_dir = PROJECT_ROOT / "examples" / "data-processor"
     out_file = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
@@ -435,8 +450,8 @@ def measure_violation_health():
                 "vh_antecedent_fired_count": 0,
             }
 
-        # Walk every persona × scenario result and count constraint outcomes
-        # Results are flat: one dict per persona×scenario combination
+        # Walk every persona × path result and count constraint outcomes
+        # Results are flat: one dict per persona×path combination
         total_evals = 0
         total_violations = 0
         antecedent_fired = 0
@@ -488,7 +503,7 @@ def measure_broken_example():
             # Emit partial metrics then exit 1 — simulates a crash mid-run
             print(json.dumps({
                 "schema": "usersim.metrics.v1",
-                "scenario": "broken",
+                "path": "broken",
                 "metrics": {
                     "exit_code": 1,
                     "wall_clock_ms": 50,
@@ -516,7 +531,7 @@ def measure_broken_example():
         config = tmpdir / "broken.yaml"
         config.write_text(textwrap.dedent(f"""\
             instrumentation: "python3 {broken_script}"
-            scenarios:
+            paths:
               - broken
             users:
               - {user_file}
@@ -570,15 +585,15 @@ DISPATCH = {
 if __name__ == "__main__":
     fn = DISPATCH.get(SCENARIO)
     if fn is None:
-        print(f"Unknown scenario: {SCENARIO}", file=sys.stderr)
+        print(f"Unknown path: {SCENARIO}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"[instrumentation] scenario={SCENARIO}", file=sys.stderr)
+    print(f"[instrumentation] path={SCENARIO}", file=sys.stderr)
     metrics = fn()
     print(f"[instrumentation] collected {len(metrics)} metrics", file=sys.stderr)
 
     json.dump({
         "schema": "usersim.metrics.v1",
-        "scenario": SCENARIO,
+        "path": SCENARIO,
         "metrics": metrics,
     }, sys.stdout)

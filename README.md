@@ -81,6 +81,15 @@ pip install usersim          # includes a pure-Python Z3 fallback
 pip install "usersim[z3]"    # with the real Z3 solver (recommended)
 ```
 
+**Optional: Node.js** (required only for web/JS instrumentation via `usersim-web`)
+
+```bash
+node --version   # need v18+
+```
+
+The core Python pipeline works without Node. You only need Node if your instrumentation
+script uses the `usersim-web` JS package (e.g. `examples/local-notes`).
+
 ---
 
 ## Quickstart

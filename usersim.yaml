@@ -13,7 +13,7 @@ perceptions: dogfood/perceptions.py
 users:
   - dogfood/users/*.py
 
-scenarios:
+paths:
   - name: data_processor_example
     description: "Full pipeline on the data-processor example (3 scenarios, 3 personas)"
     tags: [smoke, continuous]
