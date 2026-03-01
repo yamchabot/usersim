@@ -21,6 +21,11 @@ Config file schema (usersim.yaml):
       - users/*.py
     scenarios:
       - default
+      # or with descriptions (shown in HTML report when clicking a scenario ball):
+      # - name: baseline
+      #   description: "Fresh install, no existing data"
+      # - name: offline
+      #   description: "Network unavailable throughout session"
     output:
       results: results.json
       report:  report.html
@@ -94,7 +99,7 @@ def _normalise_config(raw: dict, base_dir: Path) -> dict:
         raise ValueError("No user files found.  Check 'users:' patterns in config.")
     cfg["_user_files"] = user_files
 
-    # Scenarios: list of names (strings)
+    # Scenarios: list of names (strings) or objects with name + description
     raw_scenarios = cfg.get("scenarios", ["default"])
     if isinstance(raw_scenarios, str):
         raw_scenarios = [raw_scenarios]
@@ -102,6 +107,12 @@ def _normalise_config(raw: dict, base_dir: Path) -> dict:
         s if isinstance(s, str) else s.get("name", str(s))
         for s in raw_scenarios
     ]
+    # Optional descriptions keyed by scenario name
+    cfg["_scenario_descriptions"] = {
+        s["name"]: s.get("description", "")
+        for s in raw_scenarios
+        if isinstance(s, dict) and "name" in s and s.get("description")
+    }
 
     cfg["_base_dir"] = base_dir
     return cfg
@@ -165,6 +176,13 @@ def run_from_config(
         # Step 3: judgement (in-process, no output yet — collect all first)
         from usersim.judgement.engine import _evaluate
         result = _evaluate(perc_doc, user_files)
+
+        # Inject scenario description (if declared in config) into each result entry
+        sc_desc = cfg.get("_scenario_descriptions", {}).get(scenario, "")
+        if sc_desc:
+            for r in result.get("results", []):
+                r["description"] = sc_desc
+
         all_results.append((scenario, result))
 
     # ── Assemble final output ──────────────────────────────────────────────────
