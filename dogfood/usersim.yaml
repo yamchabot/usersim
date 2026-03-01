@@ -1,6 +1,9 @@
 # usersim.yaml — dogfood: usersim testing itself
 #
-# Run from the project root:
+# Run from this directory:
+#   cd dogfood && usersim run
+#
+# Or from the project root:
 #   usersim run --config dogfood/usersim.yaml
 #
 # Instrumentation runs usersim against the bundled examples and edge cases.
@@ -28,5 +31,5 @@ scenarios:
     description: "All subsystems in one pass — ensures every persona constraint fires with a real value (no vacuous antecedents)"
 
 output:
-  results: dogfood/results.json
-  report:  dogfood/report.html
+  results: results.json
+  report:  report.html

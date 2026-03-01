@@ -120,6 +120,21 @@ def _normalise_config(raw: dict, base_dir: Path) -> dict:
 
 # ── Config-driven pipeline ─────────────────────────────────────────────────────
 
+def _resolve_output_path(path: "str | Path | None", base_dir: Path) -> "str | None":
+    """Resolve an output path relative to the config's base directory.
+
+    Absolute paths and None are returned as-is.  Relative paths (e.g. from
+    the yaml ``output:`` block) are joined against base_dir so that
+    ``usersim run`` works regardless of the working directory.
+    """
+    if not path:
+        return None
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    return str(base_dir / p)
+
+
 def run_from_config(
     config: "dict | str | Path | None" = None,
     scenario_override: "str | None" = None,
@@ -188,7 +203,8 @@ def run_from_config(
     # ── Assemble final output ──────────────────────────────────────────────────
     if len(all_results) == 1:
         _scenario, output = all_results[0]
-        eff_output_path = output_path or out_cfg.get("results")
+        raw_out = output_path or out_cfg.get("results")
+        eff_output_path = _resolve_output_path(raw_out, base_dir)
         _write_output(output, eff_output_path)
     else:
         # Matrix: flatten all scenario results into one doc
@@ -230,11 +246,13 @@ def run_from_config(
                 "effective_tests":  effective_tests,
             },
         }
-        eff_output_path = output_path or out_cfg.get("results")
+        raw_out = output_path or out_cfg.get("results")
+        eff_output_path = _resolve_output_path(raw_out, base_dir)
         _write_output(output, eff_output_path)
 
     # ── HTML report ────────────────────────────────────────────────────────────
-    report_path = out_cfg.get("report")
+    report_path_raw = out_cfg.get("report")
+    report_path     = _resolve_output_path(report_path_raw, base_dir) if report_path_raw else None
     if report_path:
         try:
             from usersim.report.html import generate_report

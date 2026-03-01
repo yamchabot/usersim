@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+DOGFOOD_DIR  = Path(__file__).parent.parent / "dogfood"
 
 # Node.js locations to try (sandbox may have it in a non-standard place)
 _NODE_PATHS = [
@@ -199,6 +200,98 @@ class TestDataProcessorExample:
         report = self.EXAMPLE / self.REPORT
         assert report.exists(), "report.html was not written"
         assert report.stat().st_size > 1000, "report.html looks suspiciously small"
+
+    def test_report_html_has_scenario_data(self):
+        html = (self.EXAMPLE / self.REPORT).read_text()
+        assert 'data-constraints=' in html
+        assert 'data-scenario-name=' in html
+
+
+# ── dogfood ───────────────────────────────────────────────────────────────────
+
+class TestDogfood:
+    """usersim testing itself — run from the dogfood directory."""
+
+    EXAMPLE   = DOGFOOD_DIR
+    RESULTS   = "results.json"
+    REPORT    = "report.html"
+    SCENARIOS = [
+        "data_processor_example",
+        "scaffold_and_validate",
+        "bad_config",
+        "judge_standalone",
+        "report_generation",
+        "full_integration",
+    ]
+    PERSONAS  = 15
+
+    @pytest.fixture(scope="class")
+    def run_result(self):
+        return _run_usersim(self.EXAMPLE)
+
+    @pytest.fixture(scope="class")
+    def results(self, run_result):
+        return _load_results(self.EXAMPLE, self.RESULTS)
+
+    def test_exits_cleanly(self, run_result):
+        assert run_result.returncode == 0, (
+            f"usersim run failed:\n{run_result.stderr}"
+        )
+
+    def test_all_checks_passed_message(self, run_result):
+        assert "ALL CHECKS PASSED" in run_result.stdout or \
+               "ALL CHECKS PASSED" in run_result.stderr
+
+    def test_results_schema(self, results):
+        assert results.get("schema") == "usersim.matrix.v1"
+
+    def test_summary_structure(self, results):
+        s = results["summary"]
+        assert {"total", "satisfied", "score"} <= s.keys()
+        assert s["score"] == 1.0
+        assert s["satisfied"] == s["total"]
+
+    def test_all_scenarios_present(self, results):
+        found = {r["scenario"] for r in results["results"]}
+        assert set(self.SCENARIOS) == found
+
+    def test_all_personas_present(self, results):
+        persons = {r["person"] for r in results["results"]}
+        assert len(persons) == self.PERSONAS, \
+            f"Expected {self.PERSONAS} personas, got {len(persons)}: {sorted(persons)}"
+
+    def test_every_result_satisfied(self, results):
+        failures = [r for r in results["results"] if not r["satisfied"]]
+        assert failures == [], \
+            f"Unsatisfied: {[(r['person'], r['scenario']) for r in failures]}"
+
+    def test_every_result_has_constraints(self, results):
+        for r in results["results"]:
+            assert isinstance(r.get("constraints"), list)
+            assert len(r["constraints"]) > 0, \
+                f"No constraints for {r['person']} / {r['scenario']}"
+
+    def test_zero_vacuous_constraints(self, results):
+        """full_integration scenario must fire every antecedent."""
+        vacuous = [
+            (r["person"], c["label"])
+            for r in results["results"]
+            if r["scenario"] == "full_integration"
+            for c in r.get("constraints", [])
+            if c.get("antecedent_fired") is False
+        ]
+        assert vacuous == [], \
+            f"Vacuous constraints in full_integration: {vacuous}"
+
+    def test_effective_tests_floor(self, results):
+        """Regression guard: effective test count must not fall below 50k."""
+        eff = results["summary"].get("effective_tests", 0)
+        assert eff >= 50_000, f"Effective tests dropped to {eff:,} — constraint coverage regressed"
+
+    def test_report_html_written(self):
+        report = self.EXAMPLE / self.REPORT
+        assert report.exists(), "report.html was not written"
+        assert report.stat().st_size > 1000, "report.html is suspiciously small"
 
     def test_report_html_has_scenario_data(self):
         html = (self.EXAMPLE / self.REPORT).read_text()
