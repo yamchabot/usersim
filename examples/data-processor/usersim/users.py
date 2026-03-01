@@ -1,11 +1,17 @@
 """
 Simulated users for the data-processor example.
 
-Three personas with different concerns. Constraints use Implies() to scope
-checks to relevant scenarios, creating genuine variation in coverage matrices.
+Constraints use named("group/check", expr) so the Group × Scenario coverage
+matrix in the HTML report is populated.
+
+Groups:
+  correctness  — data integrity and error handling
+  timing       — latency SLOs for each operation
+  throughput   — records-per-ms rates
+  resilience   — behaviour under degraded or unusual input
 """
 from usersim import Person
-from usersim.judgement.z3_compat import Implies, And
+from usersim.judgement.z3_compat import Implies, And, named
 
 
 class Developer(Person):
@@ -14,28 +20,26 @@ class Developer(Person):
 
     def constraints(self, P):
         return [
-            # Clean data: zero errors and search finds results
-            # (errors scenario has intentionally dirty input — skip error_rate there)
-            Implies(And(P.record_count >= 1, P.error_count == 0), P.error_rate <= 0.0),
-            Implies(P.record_count >= 1, P.search_returned_results),
+            # correctness
+            named("correctness/zero-errors-on-clean-data",
+                  Implies(And(P.record_count >= 1, P.error_count == 0),
+                          P.error_rate <= 0.0)),
+            named("correctness/search-returns-results",
+                  Implies(P.record_count >= 1, P.search_returned_results)),
+            named("correctness/corrupt-records-reported",
+                  Implies(P.error_count >= 1,
+                          P.summary_count + P.error_count >= P.record_count - 1)),
 
-            # Always: interactive timing (0 records → 0ms, trivially satisfied)
-            P.sort_ms    <= 1_000,
-            P.search_ms  <= 2_000,
-            P.summary_ms <= 5_000,
+            # timing
+            named("timing/sort-interactive",      P.sort_ms    <= 1_000),
+            named("timing/search-interactive",    P.search_ms  <= 2_000),
+            named("timing/summary-interactive",   P.summary_ms <= 5_000),
 
-            # Empty input: all operations complete near-instantly
-            Implies(P.record_count == 0, P.total_ms <= 5),
-
-            # Errors scenario: summary gracefully drops corrupt records
-            # summary_count + error_count should equal record_count
-            Implies(
-                P.error_count >= 1,
-                P.summary_count + P.error_count >= P.record_count - 1
-            ),
-
-            # Concurrent: worst-case sort still inside interactive budget
-            Implies(P.repetition_count >= 3, P.sort_ms <= 2_000),
+            # resilience
+            named("resilience/empty-completes-instantly",
+                  Implies(P.record_count == 0, P.total_ms <= 5)),
+            named("resilience/concurrent-sort-budget",
+                  Implies(P.repetition_count >= 3, P.sort_ms <= 2_000)),
         ]
 
 
@@ -45,29 +49,26 @@ class Analyst(Person):
 
     def constraints(self, P):
         return [
-            # Clean data: tolerable error rate
-            Implies(And(P.record_count >= 1, P.error_count == 0), P.error_rate <= 0.01),
+            # correctness
+            named("correctness/tolerable-error-rate",
+                  Implies(And(P.record_count >= 1, P.error_count == 0),
+                          P.error_rate <= 0.01)),
+            named("correctness/search-returns-results",
+                  Implies(P.record_count >= 1, P.search_returned_results)),
+            named("correctness/coverage-reported-accurately",
+                  Implies(P.error_count >= 1,
+                          P.summary_count + P.error_count >= P.record_count - 1)),
+            named("correctness/empty-summary-is-zero",
+                  Implies(P.record_count == 0, P.summary_count == 0)),
 
-            # Always: total wall time within batch window
-            P.total_ms <= 30_000,
+            # timing
+            named("timing/pipeline-within-batch-window", P.total_ms <= 30_000),
+            named("timing/summary-follows-sort",
+                  Implies(P.sort_ms <= 10_000, P.summary_ms <= 5_000)),
 
-            # Normal data: search must find results
-            Implies(P.record_count >= 1, P.search_returned_results),
-
-            # If sort finishes quickly, summary should too
-            Implies(P.sort_ms <= 10_000, P.summary_ms <= 5_000),
-
-            # Errors scenario: coverage accurately reported
-            Implies(
-                P.error_count >= 1,
-                P.summary_count + P.error_count >= P.record_count - 1
-            ),
-
-            # Empty scenario: summary returns count=0, not an error
-            Implies(P.record_count == 0, P.summary_count == 0),
-
-            # Large scenario: throughput at useful batch rate
-            Implies(P.record_count >= 50_000, P.sort_throughput >= 50),
+            # throughput
+            named("throughput/adequate-at-scale",
+                  Implies(P.record_count >= 50_000, P.sort_throughput >= 50)),
         ]
 
 
@@ -77,30 +78,25 @@ class OpsEngineer(Person):
 
     def constraints(self, P):
         return [
-            # Clean data: tight error budget
-            Implies(And(P.record_count >= 1, P.error_count == 0), P.error_rate <= 0.001),
+            # correctness
+            named("correctness/tight-error-budget",
+                  Implies(And(P.record_count >= 1, P.error_count == 0),
+                          P.error_rate <= 0.001)),
 
-            # Always: pipeline within job window
-            P.total_ms <= 30_000,
+            # timing
+            named("timing/pipeline-within-job-window",   P.total_ms <= 30_000),
+            named("timing/concurrent-within-2x-budget",
+                  Implies(P.repetition_count >= 3, P.total_ms <= 60_000)),
 
-            # Clean non-empty data: minimum throughput
-            Implies(And(P.record_count >= 1, P.error_count == 0), P.sort_throughput >= 100),
+            # throughput
+            named("throughput/minimum-on-clean-data",
+                  Implies(And(P.record_count >= 1, P.error_count == 0),
+                          P.sort_throughput >= 100)),
+            named("throughput/no-collapse-at-scale",
+                  Implies(P.record_count >= 50_000, P.sort_throughput >= 50)),
 
-            # Concurrent: worst-case timing fits 2x budget
-            Implies(
-                P.repetition_count >= 3,
-                P.total_ms <= 60_000
-            ),
-
-            # Large: throughput doesn't collapse at scale
-            Implies(
-                P.record_count >= 50_000,
-                P.sort_throughput >= 50
-            ),
-
-            # Errors: corrupt records don't disproportionately extend processing
-            Implies(
-                And(P.error_count >= 1, P.record_count >= 100),
-                P.total_ms <= P.record_count * 0.5
-            ),
+            # resilience
+            named("resilience/errors-dont-extend-processing",
+                  Implies(And(P.error_count >= 1, P.record_count >= 100),
+                          P.total_ms <= P.record_count * 0.5)),
         ]

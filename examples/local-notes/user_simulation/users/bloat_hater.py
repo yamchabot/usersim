@@ -1,5 +1,5 @@
 from usersim.judgement.person import Person
-from usersim.judgement.z3_compat import Implies
+from usersim.judgement.z3_compat import Implies, named
 
 
 class BloatHater(Person):
@@ -10,23 +10,23 @@ class BloatHater(Person):
 
     def constraints(self, P):
         return [
-            # Always: lean, no external code
-            P.arrival_friction_total    == 0,
-            P.new_note_step_count       <= 2,
-            P.vendor_surface            == 0,
-            P.external_dependency_count == 0,
-            P.load_request_count        == 0,
-            P.interactive_element_count <= 15,
+            # friction
+            named("friction/zero-arrival-barriers", P.arrival_friction_total == 0),
+            named("friction/minimal-steps-to-note", P.new_note_step_count <= 2),
 
-            # search_heavy: search exists and works (feature earns its place)
-            Implies(P.search_hit_count + P.search_miss_count >= 1,
-                    P.search_hit_count >= 1),
+            # footprint
+            named("footprint/no-vendor-dependencies", P.vendor_surface == 0),
+            named("footprint/no-external-deps",       P.external_dependency_count == 0),
+            named("footprint/no-load-requests",       P.load_request_count == 0),
+            named("footprint/ui-element-count",       P.interactive_element_count <= 15),
+            named("footprint/search-no-extra-resources",
+                  Implies(P.search_hit_count + P.search_miss_count >= 1,
+                          P.external_resource_count == 0)),
 
-            # search_heavy: no extra resources loaded for search
-            Implies(P.search_hit_count + P.search_miss_count >= 1,
-                    P.external_resource_count == 0),
-
-            # bulk_import: zero storage errors even under load
-            Implies(P.session_note_create_count >= 5,
-                    P.storage_error_count == 0),
+            # correctness
+            named("correctness/search-finds-results",
+                  Implies(P.search_hit_count + P.search_miss_count >= 1,
+                          P.search_hit_count >= 1)),
+            named("correctness/bulk-no-storage-errors",
+                  Implies(P.session_note_create_count >= 5, P.storage_error_count == 0)),
         ]

@@ -1,5 +1,5 @@
 from usersim.judgement.person import Person
-from usersim.judgement.z3_compat import Implies
+from usersim.judgement.z3_compat import Implies, named
 
 
 class DeveloperScratchpad(Person):
@@ -10,24 +10,24 @@ class DeveloperScratchpad(Person):
 
     def constraints(self, P):
         return [
-            # Always: no data leaves the device
-            P.total_request_count        == 0,
-            P.typing_request_count       == 0,
-            P.shared_notebook_key_count  == 0,
-            P.notebook_isolation_ratio   >= 1.0,
-            P.recency_violation_count    == 0,
-            P.reload_loss_count          == 0,
-            P.offline_failure_count      == 0,
+            # privacy
+            named("privacy/no-outbound-requests",  P.total_request_count == 0),
+            named("privacy/no-typing-telemetry",   P.typing_request_count == 0),
+            named("privacy/search-stays-local",
+                  Implies(P.search_hit_count + P.search_miss_count >= 1,
+                          P.search_request_count == 0)),
+            named("privacy/bulk-stays-local",
+                  Implies(P.session_note_create_count >= 5, P.outbound_request_count == 0)),
 
-            # search_heavy: searching must not trigger any outbound requests
-            Implies(P.search_hit_count + P.search_miss_count >= 1,
-                    P.search_request_count == 0),
+            # isolation
+            named("isolation/no-shared-keys",        P.shared_notebook_key_count == 0),
+            named("isolation/notebook-ratio-correct", P.notebook_isolation_ratio >= 1.0),
 
-            # search_heavy: at least one query must return results (app actually searches)
-            Implies(P.search_hit_count + P.search_miss_count >= 1,
-                    P.search_hit_count >= 1),
-
-            # bulk_import: no network activity during mass creation
-            Implies(P.session_note_create_count >= 5,
-                    P.outbound_request_count == 0),
+            # correctness
+            named("correctness/recency-order",    P.recency_violation_count == 0),
+            named("correctness/no-reload-loss",   P.reload_loss_count == 0),
+            named("correctness/offline-resilient", P.offline_failure_count == 0),
+            named("correctness/search-finds-results",
+                  Implies(P.search_hit_count + P.search_miss_count >= 1,
+                          P.search_hit_count >= 1)),
         ]

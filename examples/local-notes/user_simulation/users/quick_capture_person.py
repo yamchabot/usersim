@@ -1,5 +1,5 @@
 from usersim.judgement.person import Person
-from usersim.judgement.z3_compat import Implies, And
+from usersim.judgement.z3_compat import Implies, And, named
 
 
 class QuickCapturePerson(Person):
@@ -10,23 +10,22 @@ class QuickCapturePerson(Person):
 
     def constraints(self, P):
         return [
-            # Always: zero friction to start typing
-            P.arrival_friction_total         == 0,
-            P.new_note_step_count            <= 2,
-            P.reload_loss_count              == 0,
-            P.data_integrity_rate            >= 1.0,
-            P.time_to_first_keystroke_ms     <= 500,
-            P.capture_readiness_score        <= 2000,
+            # friction
+            named("friction/zero-arrival-barriers",   P.arrival_friction_total == 0),
+            named("friction/minimal-steps-to-note",   P.new_note_step_count <= 2),
+            named("friction/time-to-first-keystroke", P.time_to_first_keystroke_ms <= 500),
+            named("friction/capture-readiness-score", P.capture_readiness_score <= 2000),
 
-            # bulk_import: rapid note creation must not produce errors
-            Implies(P.session_note_create_count >= 5,
-                    P.storage_error_count == 0),
+            # persistence
+            named("persistence/no-reload-loss",    P.reload_loss_count == 0),
+            named("persistence/data-integrity",    P.data_integrity_rate >= 1.0),
+            named("persistence/bulk-autosave-ok",
+                  Implies(P.session_note_create_count >= 5, P.storage_error_count == 0)),
+            named("persistence/bulk-no-data-loss",
+                  Implies(P.session_note_create_count >= 5, P.data_integrity_rate >= 1.0)),
 
-            # bulk_import: autosave must work even under back-to-back creation
-            Implies(P.session_note_create_count >= 5,
-                    P.data_integrity_rate >= 1.0),
-
-            # search_heavy: search must stay responsive (< 500ms avg)
-            Implies(P.search_hit_count + P.search_miss_count >= 1,
-                    P.search_latency_ms <= 500),
+            # search
+            named("search/responsive",
+                  Implies(P.search_hit_count + P.search_miss_count >= 1,
+                          P.search_latency_ms <= 500)),
         ]
