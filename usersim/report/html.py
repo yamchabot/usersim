@@ -619,31 +619,47 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   <title>User Simulation Report</title>
   <style>
 :root {{
-  --bg:      #0d1117;
-  --card:    #161b22;
-  --card2:   #1c2128;
-  --border:  #30363d;
-  --text:    #e6edf3;
-  --muted:   #8b949e;
-  --pass:    #3fb950;
-  --fail:    #f85149;
-  --blue:    #58a6ff;
-  --orange:  #ffa657;
+  --bg:         #0d1117;
+  --card:       #161b22;
+  --card2:      #1c2128;
+  --border:     #30363d;
+  --text:       #e6edf3;
+  --fg:         #e6edf3;
+  --muted:      #8b949e;
+  --pass:       #3fb950;
+  --fail:       #f85149;
+  --blue:       #58a6ff;
+  --orange:     #ffa657;
+  --pass-rgb:   63,185,80;
+  --fail-rgb:   248,81,73;
+  --orange-rgb: 255,166,87;
   --accent-rgb: 56,139,253;
-  --mono:    'SF Mono', 'Consolas', 'Menlo', monospace;
+  --sink:       var(--sink);
+  --hover-bg:   var(--hover-bg);
+  --mono:       'SF Mono', 'Consolas', 'Menlo', monospace;
 }}
 body.earth {{
-  --bg:      #1c1710;
-  --card:    #25200f;
-  --card2:   #2e2718;
-  --border:  #4a3f2c;
-  --text:    #ede0c8;
-  --muted:   #9e8f76;
-  --pass:    #7aaa4a;
-  --fail:    #c45f3a;
-  --blue:    #c4913a;
-  --orange:  #d4a44c;
-  --accent-rgb: 196,145,58;
+  /* backgrounds: espresso → warm brown → medium brown */
+  --bg:         #1c1710;
+  --card:       #26200e;
+  --card2:      #312a18;
+  --border:     #5a4a30;
+  /* text: warm cream → tan */
+  --text:       #f0e2c4;
+  --fg:         #f0e2c4;
+  --muted:      #a89878;
+  /* semantic colors: 4 distinct earth hues */
+  --pass:       #7aaa4a;   /* sage green  */
+  --fail:       #c45f3a;   /* terracotta  */
+  --blue:       #5a8f7a;   /* dusty teal — headings, labels, links */
+  --orange:     #c4913a;   /* warm amber  — warnings, gaps, partial */
+  /* rgb variants for rgba() usage */
+  --pass-rgb:   122,170,74;
+  --fail-rgb:   196,95,58;
+  --orange-rgb: 196,145,58;
+  --accent-rgb: 196,145,58;  /* amber heatmap cells */
+  --sink:       rgba(0,0,0,0.35);
+  --hover-bg:   rgba(255,255,255,0.04);
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
@@ -699,14 +715,14 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   border-radius: 50%; border: 2px solid var(--border);
   background: #2d333b; object-fit: cover;
 }}
-.card.all-pass  .avatar {{ border-color: var(--pass); box-shadow: 0 0 0 3px rgba(63,185,80,.18); }}
-.card.some-fail .avatar {{ border-color: var(--fail); box-shadow: 0 0 0 3px rgba(248,81,73,.12); }}
+.card.all-pass  .avatar {{ border-color: var(--pass); box-shadow: 0 0 0 3px rgba(var(--pass-rgb),.18); }}
+.card.some-fail .avatar {{ border-color: var(--fail); box-shadow: 0 0 0 3px rgba(var(--fail-rgb),.12); }}
 .person-name {{ font-size: 14px; font-weight: 700; text-align: center; }}
 .person-role {{ font-size: 10px; color: var(--muted); text-align: center; line-height: 1.4; }}
 .pronouns    {{ font-size: 10px; color: var(--border); font-style: italic; text-align: center; }}
 .pass-badge {{ font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 10px; margin-top: 2px; }}
-.badge-all  {{ background: rgba(63,185,80,.2);  color: var(--pass); }}
-.badge-some {{ background: rgba(248,81,73,.15); color: var(--fail); }}
+.badge-all  {{ background: rgba(var(--pass-rgb),.2);  color: var(--pass); }}
+.badge-some {{ background: rgba(var(--fail-rgb),.15); color: var(--fail); }}
 
 /* ── Constraints panel ───────────────────────────────────── */
 .constraints-panel {{
@@ -717,7 +733,7 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   transition: background .15s;
 }}
 .constraints-panel.scenario-active {{
-  background: rgba(88,166,255,.04);
+  background: rgba(var(--accent-rgb),.04);
 }}
 .panel-header {{ display: flex; flex-direction: column; gap: 6px; }}
 .goal-text {{ font-size: 12px; color: var(--muted); line-height: 1.5; }}
@@ -736,8 +752,8 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   font-size: 10px; font-weight: 600;
   padding: 1px 6px; border-radius: 8px;
 }}
-.scenario-label .sl-badge.pass {{ background: rgba(63,185,80,.2);  color: var(--pass); }}
-.scenario-label .sl-badge.fail {{ background: rgba(248,81,73,.15); color: var(--fail); }}
+.scenario-label .sl-badge.pass {{ background: rgba(var(--pass-rgb),.2);  color: var(--pass); }}
+.scenario-label .sl-badge.fail {{ background: rgba(var(--fail-rgb),.15); color: var(--fail); }}
 .scenario-label .sl-close {{
   cursor: pointer; color: var(--muted); font-size: 14px;
   line-height: 1; padding: 0 2px; opacity: .6;
@@ -752,8 +768,8 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   background: #0d1117; border: 1px solid var(--border);
   color: var(--blue); word-break: break-word; line-height: 1.6;
 }}
-.constraint.c-fail    {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
-.constraint.c-partial {{ border-color: var(--orange); background: rgba(255,166,87,.08); color: var(--orange); }}
+.constraint.c-fail    {{ border-color: var(--fail); background: rgba(var(--fail-rgb),.08); color: var(--fail); }}
+.constraint.c-partial {{ border-color: var(--orange); background: rgba(var(--orange-rgb),.08); color: var(--orange); }}
 .constraint.c-unexercised {{ opacity: 0.4; }}
 .c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; flex-shrink: 0; }}
 .c-body   {{ flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }}
@@ -784,7 +800,7 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   gap: 16px;
 }}
 .gm-panel {{
-  background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+  background: var(--sink); border: 1px solid var(--border);
   border-radius: 7px; padding: 12px 14px; min-width: 0;
 }}
 .gm-panel-label {{
@@ -817,20 +833,20 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   padding: 4px 4px 6px !important; line-height: 1.4;
 }}
 .gm-cell {{
-  color: var(--fg); font-size: 10px; border-left: 1px solid #21262d;
+  color: var(--fg); font-size: 10px; border-left: 1px solid var(--border);
   min-width: 40px;
 }}
 .gm-total {{
   font-weight: 700; color: var(--fg);
   border-left: 1px solid var(--border); min-width: 30px;
 }}
-.gm-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+.gm-table tbody tr:hover {{ background: var(--hover-bg); }}
 
 /* ── Variable impact matrix ──────────────────────────────── */
 .vim-primary {{ margin-bottom: 4px; }}
 .vim-wrap {{
   padding: 10px 12px;
-  background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  background: var(--sink); border: 1px solid var(--border);
   border-radius: 7px;
 }}
 .vim-label {{ font-size: 11px; color: var(--muted); margin-bottom: 8px; }}
@@ -868,19 +884,19 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
   padding: 4px 4px 6px !important; line-height: 1.4;
 }}
 .vim-cell {{
-  color: var(--fg); font-size: 11px; border-left: 1px solid #21262d;
+  color: var(--fg); font-size: 11px; border-left: 1px solid var(--border);
   min-width: 80px;
 }}
 .vim-total {{
   font-weight: 700; color: var(--fg); border-left: 1px solid var(--border);
   min-width: 60px;
 }}
-.vim-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+.vim-table tbody tr:hover {{ background: var(--hover-bg); }}
 .vim-table tbody tr:hover .vim-var {{ background: #161b22; }}
 
 /* ── Never-exercised gaps ────────────────────────────────── */
 .gaps-section {{
-  background: rgba(255,166,87,.08); border: 1px solid var(--orange);
+  background: rgba(var(--orange-rgb),.08); border: 1px solid var(--orange);
   border-radius: 10px; padding: 18px 22px; margin-bottom: 24px;
 }}
 .gaps-title {{ font-weight: 700; color: var(--orange); margin-bottom: 6px; font-size: 14px; }}
@@ -893,11 +909,11 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 }}
 .gap-person {{
   font-weight: 600; padding: 6px 12px; font-size: 12px;
-  border-bottom: 1px solid #21262d; white-space: nowrap;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
 }}
 .gap-label {{
   font-family: var(--mono); font-size: 11px; color: var(--blue);
-  padding: 6px 12px; border-bottom: 1px solid #21262d;
+  padding: 6px 12px; border-bottom: 1px solid var(--border);
 }}
 
 /* ── Scenario list (grid panel) ──────────────────────────── */
@@ -925,10 +941,10 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
   transition: background .1s, opacity .12s;
   border: 1px solid transparent;
 }}
-.scenario-row:hover {{ background: rgba(255,255,255,.05); }}
+.scenario-row:hover {{ background: var(--hover-bg); }}
 .scenario-row.selected {{
-  background: rgba(88,166,255,.1);
-  border-color: rgba(88,166,255,.3);
+  background: rgba(var(--accent-rgb),.1);
+  border-color: rgba(var(--accent-rgb),.3);
 }}
 .scenario-list.has-selection .scenario-row:not(.selected) {{ opacity: 0.35; }}
 .scenario-list.has-selection .scenario-row:not(.selected):hover {{ opacity: 0.85; }}
