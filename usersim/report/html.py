@@ -347,10 +347,17 @@ def generate_report(results: dict, output_path: str | Path) -> None:
       <div class="goal-text" id="cp-{pi}-goal">{goal}</div>
       <div class="scenario-label" id="cp-{pi}-scenario-label"></div>
     </div>
-    {persona_matrix_html}
-    <div class="constraints" id="cp-{pi}-constraints">
-      {agg_constraints_html}
+    <div class="vim-primary" id="cp-{pi}-matrix">
+      {persona_matrix_html}
     </div>
+    <details class="constraints-details">
+      <summary class="constraints-summary">
+        {len(constraint_labels)} constraints
+      </summary>
+      <div class="constraints" id="cp-{pi}-constraints">
+        {agg_constraints_html}
+      </div>
+    </details>
   </div>
 
   <div class="grid-panel">
@@ -566,12 +573,25 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
 
 /* ── Variable impact matrix ──────────────────────────────── */
+.vim-primary {{ margin-bottom: 4px; }}
 .vim-wrap {{
-  margin: 8px 0 12px; padding: 10px 12px;
+  padding: 10px 12px;
   background: rgba(0,0,0,0.3); border: 1px solid var(--border);
   border-radius: 7px;
 }}
 .vim-label {{ font-size: 11px; color: var(--muted); margin-bottom: 8px; }}
+/* ── Collapsible constraint list ─────────────────────────── */
+.constraints-details {{ margin-top: 6px; }}
+.constraints-summary {{
+  font-size: 11px; color: var(--muted); cursor: pointer;
+  padding: 5px 4px; list-style: none; user-select: none;
+  display: flex; align-items: center; gap: 6px;
+}}
+.constraints-summary::-webkit-details-marker {{ display: none; }}
+.constraints-summary::before {{
+  content: '▶'; font-size: 9px; transition: transform .15s;
+}}
+details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 .vim-scroll {{ overflow-x: auto; }}
 .vim-table {{
   border-collapse: collapse; font-family: var(--mono); font-size: 11px;
@@ -753,6 +773,10 @@ function selectBall(ball, pi) {{
   panel.classList.add('scenario-active');
 
   constraintsEl.innerHTML = buildConstraintHTML(constraints);
+
+  // Auto-expand constraint list when drilling into a scenario
+  const detailsEl = constraintsEl.closest('details');
+  if (detailsEl) detailsEl.open = true;
 
   const badgeCls = isPass ? 'pass' : 'fail';
   const badgeTxt = isPass ? 'passed' : 'failed';
