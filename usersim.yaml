@@ -1,20 +1,17 @@
 # usersim.yaml — dogfood: usersim testing itself
 #
-# Run from this directory:
-#   cd dogfood && usersim run
-#
-# Or from the project root:
-#   usersim run --config dogfood/usersim.yaml
+# Run from the project root:
+#   usersim run
 #
 # Instrumentation runs usersim against the bundled examples and edge cases.
 # No infinite recursion — it tests the *examples*, not this config.
 version: 1
 
-instrumentation: "python3 instrumentation.py"
-perceptions: perceptions.py
+instrumentation: "python3 dogfood/instrumentation.py"
+perceptions: dogfood/perceptions.py
 
 users:
-  - users/*.py
+  - dogfood/users/*.py
 
 scenarios:
   - name: data_processor_example
@@ -31,5 +28,5 @@ scenarios:
     description: "All subsystems in one pass — ensures every persona constraint fires with a real value (no vacuous antecedents)"
 
 output:
-  results: results.json
-  report:  report.html
+  results: dogfood/results.json
+  report:  dogfood/report.html

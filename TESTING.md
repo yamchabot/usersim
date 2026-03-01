@@ -71,7 +71,7 @@ pytest -v
 ## usersim's own self-check
 
 ```bash
-cd dogfood && usersim audit
+usersim audit
 ```
 
 Runs the dogfood pipeline and analyses the results for constraint health:
@@ -90,5 +90,5 @@ To also run the self-check:
 ```yaml
 - run: pip install -e ".[dev]"
 - run: pytest
-- run: cd dogfood && usersim audit
+- run: usersim audit
 ```

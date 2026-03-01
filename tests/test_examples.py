@@ -211,9 +211,10 @@ class TestDataProcessorExample:
 # ── dogfood ───────────────────────────────────────────────────────────────────
 
 class TestDogfood:
-    """usersim testing itself — run from the dogfood directory."""
+    """usersim testing itself — usersim.yaml is at project root."""
 
-    EXAMPLE   = DOGFOOD_DIR
+    EXAMPLE   = DOGFOOD_DIR          # where results/report land
+    ROOT      = DOGFOOD_DIR.parent   # where usersim.yaml lives
     RESULTS   = "results.json"
     REPORT    = "report.html"
     SCENARIOS = [
@@ -228,7 +229,7 @@ class TestDogfood:
 
     @pytest.fixture(scope="class")
     def run_result(self):
-        return _run_usersim(self.EXAMPLE)
+        return _run_usersim(self.ROOT)
 
     @pytest.fixture(scope="class")
     def results(self, run_result):
