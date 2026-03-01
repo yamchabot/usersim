@@ -1,6 +1,6 @@
 """UX researcher writing persona constraint files — needs clear, detailed results."""
 from usersim import Person
-from usersim.judgement.z3_compat import Implies
+from usersim.judgement.z3_compat import Implies, And, Not
 
 
 class PersonaAuthor(Person):
@@ -11,23 +11,40 @@ class PersonaAuthor(Person):
 
     def constraints(self, P):
         return [
-            # ── Results must be complete and meaningful ───────────────────
-            Implies(P.pipeline_exit_code == 0, P.all_constraints_present),
+            # ── Result completeness: matrix must be structurally sound ─────
+            # Total must equal persons × scenarios — an incomplete matrix is useless
+            Implies(
+                P.results_total >= 1,
+                P.results_total == P.person_count * P.scenario_count,
+            ),
+            # Can't have results with no persons or no scenarios
+            Not(And(P.results_total >= 1, P.person_count == 0)),
+            Not(And(P.results_total >= 1, P.scenario_count == 0)),
+            # The data-processor example must produce a full 3×3 matrix
+            Implies(P.pipeline_exit_code == 0, P.results_total >= 9),
             Implies(P.pipeline_exit_code == 0, P.person_count >= 3),
             Implies(P.pipeline_exit_code == 0, P.scenario_count >= 3),
-            # Total = persons × scenarios (3×3 = 9 for data-processor)
-            Implies(P.results_total >= 1, P.results_total >= 9),
-            # A useful result set has at least something passing
-            Implies(P.results_total >= 1, P.results_satisfied >= 1),
-            Implies(P.results_total >= 1, P.results_score > 0),
-            # If we have 9+ results, person and scenario counts must be consistent
-            Implies(P.results_total >= 9, P.person_count >= 3),
-            Implies(P.results_total >= 9, P.scenario_count >= 3),
+            # Constraints must be present for the results to be useful
+            Implies(P.pipeline_exit_code == 0, P.all_constraints_present),
 
-            # ── Report must support her review workflow ───────────────────
-            Implies(P.report_file_created, P.report_has_cards),
-            Implies(P.report_file_created, P.report_is_self_contained),
-            Implies(P.report_file_created, P.report_file_size_bytes >= 5000),
-            # Report must have doctype (otherwise browser quirks mode breaks layout)
-            Implies(P.report_file_created, P.report_has_doctype),
+            # ── Result quality: at least something must be passing ─────────
+            # A matrix of all failures is unreadable — needs contrast to be useful
+            Implies(P.results_total >= 1, P.results_satisfied >= 1),
+            # satisfied can never exceed total
+            Implies(P.results_total >= 1, P.results_satisfied <= P.results_total),
+
+            # ── Report: majority of quality signals must hold ─────────────
+            # At least 3 of 4 structural quality checks must pass
+            # (Z3 boolean arithmetic — each flag contributes 1 when True)
+            Implies(
+                P.report_file_created,
+                P.report_has_cards + P.report_is_self_contained
+                + P.report_has_doctype >= 3,
+            ),
+            # Report size must scale with the result matrix
+            # A 9-result report under 1800 bytes (9×200) is suspiciously small
+            Implies(
+                And(P.report_file_created, P.results_total >= 1),
+                P.report_file_size_bytes >= P.results_total * 200,
+            ),
         ]

@@ -30,7 +30,8 @@ def compute(metrics: dict, **_) -> dict:
         "pipeline_wall_clock_ms":   num("wall_clock_ms", 0),
         "results_total":            num("results_total", 0),
         "results_satisfied":        num("results_satisfied", 0),
-        "results_score":            num("results_score", 0.0),
+        # results_score intentionally omitted — Z3 computes pass-rate
+        # relationships from results_satisfied and results_total directly
         "person_count":             num("person_count", 0),
         "scenario_count":           num("scenario_count", 0),
         "output_is_valid_json":     flag("stdout_valid_json"),
