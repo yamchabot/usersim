@@ -174,16 +174,31 @@ def run_from_config(
     user_files = cfg["_user_files"]
     scenarios  = [scenario_override] if scenario_override else cfg["_scenarios"]
 
-    # Filter by tags if requested
-    if tags and not scenario_override:
-        tag_set = set(tags)
+    # Tags that never run unless explicitly requested
+    _OPT_IN_TAGS = {"expensive"}
+
+    # Filter scenarios by tag
+    if not scenario_override:
         scenario_tags = cfg.get("_scenario_tags", {})
-        scenarios = [
-            s for s in scenarios
-            if not scenario_tags.get(s) or tag_set.intersection(scenario_tags.get(s, []))
-        ]
-        if verbose:
-            print(f"[usersim] tag filter {tags!r}: running {len(scenarios)} scenario(s)", file=sys.stderr)
+        tag_set = set(tags) if tags else set()
+
+        def _should_run(s):
+            s_tags = set(scenario_tags.get(s, []))
+            opt_in = s_tags & _OPT_IN_TAGS
+            if opt_in:
+                # Opt-in tags: only run when explicitly requested
+                return bool(opt_in & tag_set)
+            if tag_set:
+                # Normal tag filter: untagged scenarios always pass
+                return not s_tags or bool(s_tags & tag_set)
+            return True
+
+        scenarios = [s for s in scenarios if _should_run(s)]
+        if verbose and (tags or any(
+            _OPT_IN_TAGS & set(scenario_tags.get(s, []))
+            for s in cfg["_scenarios"]
+        )):
+            print(f"[usersim] tag filter {tags or []!r}: running {len(scenarios)} scenario(s)", file=sys.stderr)
 
     instr_cmd = cfg["instrumentation"]
     perc_cmd  = cfg["perceptions"]
