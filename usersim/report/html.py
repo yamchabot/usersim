@@ -609,7 +609,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         goal2  = (first2.get("goal", "") or "").replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
         agg_map_entries.append(f'  {pi}: {{ goal: `{goal2}`, html: `{agg_html}` }}')
 
-    agg_map_js = "{{\n" + ",\n".join(agg_map_entries) + "\n}}"
+    agg_map_js = "{\n" + ",\n".join(agg_map_entries) + "\n}"
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
