@@ -111,21 +111,32 @@ def cmd_init(args):
 
 
 def cmd_audit(args):
-    """Analyse a results.json file for constraint health problems."""
+    """Analyse constraint health — runs tests first if no --results file given."""
     from usersim.audit import run_audit, print_audit
-    from usersim.runner import load_config
-
-    if args.results and args.results != "-":
-        with open(args.results) as f:
-            results = json.load(f)
-    else:
-        results = json.load(sys.stdin)
+    from usersim.runner import load_config, run_from_config
 
     config = None
     try:
         config = load_config(args.config)
     except Exception:
         pass
+
+    if args.results and args.results != "-":
+        with open(args.results) as f:
+            results = json.load(f)
+    elif args.results == "-":
+        results = json.load(sys.stdin)
+    else:
+        # No results file — run the pipeline first
+        if config is None:
+            print("error: no results file and no usersim.yaml found", file=sys.stderr)
+            return 1
+        print("Running tests...", file=sys.stderr)
+        try:
+            results = run_from_config(config=args.config, verbose=False)
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
 
     audit = run_audit(results, config=config)
 
@@ -359,16 +370,18 @@ def main(argv=None):
     # ── audit ─────────────────────────────────────────────────────────────────
     p_audit = sub.add_parser(
         "audit",
-        help="Analyse results.json for constraint health problems",
+        help="Analyse constraint health (runs tests first if no --results given)",
         description=(
             "Detects: vacuous constraints, trivially-passing constraints, dead perceptions,\n"
             "constraint count imbalance, and variable density distribution.\n\n"
+            "If --results is omitted, runs the full test pipeline first (reads usersim.yaml).\n"
             "Exits 1 if any vacuous constraints are found (useful in CI)."
         ),
     )
     p_audit.add_argument(
         "--results", metavar="FILE",
-        help="Results JSON file; omit or use '-' to read from stdin",
+        help="Results JSON file to analyse; use '-' for stdin. "
+             "If omitted, tests are run automatically first.",
     )
     p_audit.add_argument(
         "--config", metavar="FILE",
