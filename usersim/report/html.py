@@ -639,27 +639,27 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   --mono:       'SF Mono', 'Consolas', 'Menlo', monospace;
 }}
 body.earth {{
-  /* backgrounds: dark forest floor → moss → bark */
-  --bg:         #1a1f12;
-  --card:       #232b18;
-  --card2:      #2d3820;
-  --border:     #4a5e35;
-  /* text: warm parchment → tan */
-  --text:       #e8dfc0;
-  --fg:         #e8dfc0;
-  --muted:      #8fa870;
-  /* semantic colors: 5 distinct earth hues, all vivid enough to pop on dark green */
-  --pass:       #5ec45e;   /* bright meadow green   */
-  --fail:       #e05c30;   /* fired clay / rust      */
-  --blue:       #6bbfcc;   /* sky through canopy     */
-  --orange:     #e0a030;   /* autumn amber / harvest */
-  /* rgb variants for rgba() usage */
-  --pass-rgb:   94,196,94;
-  --fail-rgb:   224,92,48;
-  --orange-rgb: 224,160,48;
-  --accent-rgb: 120,180,60;  /* green heatmap cells */
-  --sink:       rgba(0,0,0,0.4);
-  --hover-bg:   rgba(255,255,255,0.05);
+  /* backgrounds: dark bud green — nearly black */
+  --bg:         #0c1508;
+  --card:       #131f0d;
+  --card2:      #1c2e14;
+  --border:     #2e4a1e;
+  /* text: trichome crystal — pale yellow-white */
+  --text:       #d8f0b0;
+  --fg:         #d8f0b0;
+  --muted:      #6a8a50;
+  /* semantic: vivid bud palette */
+  --pass:       #6dd633;   /* neon bud green        */
+  --fail:       #c87028;   /* orange pistil / hair  */
+  --blue:       #b878e8;   /* purple trichome       */
+  --orange:     #e09040;   /* amber resin           */
+  /* rgb variants */
+  --pass-rgb:   109,214,51;
+  --fail-rgb:   200,112,40;
+  --orange-rgb: 224,144,64;
+  --accent-rgb: 80,160,40;   /* deep green heatmap cells */
+  --sink:       rgba(0,0,0,0.5);
+  --hover-bg:   rgba(100,200,50,0.06);
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
