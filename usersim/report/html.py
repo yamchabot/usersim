@@ -236,6 +236,9 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     gm_var_sc:  dict[str, dict[str, int]] = {}   # variable × scenario
     gm_var_pers: dict[str, dict[str, int]] = {}  # variable × persona
     gm_pers_sc:  dict[str, dict[str, int]] = {}  # persona × scenario
+    gm_group_sc: dict[str, dict[str, int]] = {}  # group × scenario (declared here, populated in loop)
+
+    gm_group_sc:  dict[str, dict[str, int]] = {}
 
     for r in all_results:
         persona  = r["person"]
@@ -259,6 +262,13 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 gm_pers_sc.setdefault(persona, {})
                 gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
 
+            # group × scenario: extract group prefix from label (e.g. "pipeline/exit-0" → "pipeline")
+            label = c.get("label") or ""
+            group = label.split("/")[0] if "/" in label else label
+            if group:
+                gm_group_sc.setdefault(group, {})
+                gm_group_sc[group][scenario] = gm_group_sc[group].get(scenario, 0) + 1
+
     # Exclude totals/sums that dominate and obscure the rest of the matrix
     _MATRIX_EXCLUDE = {"results_total"}
 
@@ -275,6 +285,9 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                                   row_label="variable", col_label="persona")
     tbl_pers_sc  = _matrix_table(persons_ordered, scenarios, gm_pers_sc,
                                   row_label="persona", col_label="scenario")
+    all_groups   = sorted(gm_group_sc, key=lambda g: -sum(gm_group_sc[g].values()))
+    tbl_group_sc = _matrix_table(all_groups, scenarios, gm_group_sc,
+                                  row_label="group", col_label="scenario")
 
     global_matrices_html = f"""
 <div class="gm-section">
@@ -292,9 +305,9 @@ def generate_report(results: dict, output_path: str | Path) -> None:
       <div class="gm-panel-label">Persona × Scenario</div>
       {tbl_pers_sc}
     </div>
-    <div class="gm-panel gm-panel-empty">
-      <div class="gm-panel-label">Coming soon</div>
-      <div class="gm-empty-hint">Constraint group coverage, dependency graph, or coverage gaps — to be determined.</div>
+    <div class="gm-panel">
+      <div class="gm-panel-label">Group × Scenario</div>
+      {tbl_group_sc}
     </div>
   </div>
 </div>
