@@ -1,0 +1,22 @@
+# usersim.yaml — agent-convergence example
+#
+# Measures search.py quality. Run by the convergence loop in run_agent.py.
+version: 1
+
+instrumentation: "python3 usersim/instrumentation.py"
+perceptions:     "python3 usersim/perceptions.py"
+
+users:
+  - usersim/users/search_quality_user.py
+
+paths:
+  - name: python
+    description: "Search for 'python' — 5 relevant items in corpus of 20"
+  - name: javascript
+    description: "Search for 'javascript' — 3 relevant items in corpus of 20"
+  - name: git
+    description: "Search for 'git' — 2 relevant items in corpus of 20"
+
+output:
+  results: usersim/results.json
+  report:  usersim/report.html
