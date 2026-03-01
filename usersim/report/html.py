@@ -149,12 +149,14 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     def _build_persona_matrix(person_name: str) -> str:
         """
         Build a variable × scenario impact matrix for one persona.
-        Rows = variables used in this persona's constraints (sorted by total).
+        Rows = variables used in this persona's constraints (sorted by total
+               antecedent-fired count across all scenarios).
         Columns = scenarios.
-        Cell = number of constraint expressions referencing that variable
-               in that scenario.
+        Cell = number of constraints referencing that variable whose antecedent
+               actually FIRED in that scenario (not vacuous).
+               Constraints without an antecedent (plain assertions) always count.
         """
-        # var → {scenario → count}
+        # var → {scenario → fired_count}
         var_sc: dict[str, dict[str, int]] = {}
         for s in scenarios:
             r = result_map.get((person_name, s))
@@ -162,6 +164,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 continue
             for c in r.get("constraints", []):
                 if not isinstance(c, dict):
+                    continue
+                fired = c.get("antecedent_fired")
+                # Only count if antecedent fired (or constraint has no antecedent)
+                if fired is False:
                     continue
                 expr = c.get("expr") or ""
                 for v in _extract_vars(expr):
@@ -212,7 +218,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             )
 
         return f"""<div class="vim-wrap">
-  <div class="vim-label">📊 Variable impact — constraints referencing each variable by scenario</div>
+  <div class="vim-label">📊 Variable impact — active constraints per scenario (excludes vacuous antecedents)</div>
   <div class="vim-scroll">
     <table class="vim-table">
       <thead>{header}</thead>
