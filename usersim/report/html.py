@@ -131,9 +131,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     else:
         gaps_html = ""
 
-    # ── Variable impact matrix ─────────────────────────────────────────────────
-    # Parse variable names from constraint expr fields, build
-    # variable × persona usage count matrix.
+    # ── Variable impact matrix helpers ────────────────────────────────────────
     import re as _re
 
     _Z3_KEYWORDS = {
@@ -143,83 +141,85 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     _VAR_RE = _re.compile(r'\b([a-z][a-z0-9_]*)\b')
 
     def _extract_vars(expr: str) -> list[str]:
-        """Extract perception variable names from a Z3 expression string."""
         return [
             m for m in _VAR_RE.findall(expr)
             if m not in _Z3_KEYWORDS and len(m) > 2
         ]
 
-    # var → {persona → count}
-    var_persona_counts: dict[str, dict[str, int]] = {}
-
-    for r in all_results:
-        persona = r["person"]
-        for c in r.get("constraints", []):
-            if not isinstance(c, dict):
+    def _build_persona_matrix(person_name: str) -> str:
+        """
+        Build a variable × scenario impact matrix for one persona.
+        Rows = variables used in this persona's constraints (sorted by total).
+        Columns = scenarios.
+        Cell = number of constraint expressions referencing that variable
+               in that scenario.
+        """
+        # var → {scenario → count}
+        var_sc: dict[str, dict[str, int]] = {}
+        for s in scenarios:
+            r = result_map.get((person_name, s))
+            if not r:
                 continue
-            expr = c.get("expr") or ""
-            for v in _extract_vars(expr):
-                if v not in var_persona_counts:
-                    var_persona_counts[v] = {}
-                var_persona_counts[v][persona] = (
-                    var_persona_counts[v].get(persona, 0) + 1
-                )
+            for c in r.get("constraints", []):
+                if not isinstance(c, dict):
+                    continue
+                expr = c.get("expr") or ""
+                for v in _extract_vars(expr):
+                    if v not in var_sc:
+                        var_sc[v] = {}
+                    var_sc[v][s] = var_sc[v].get(s, 0) + 1
 
-    # Sort variables by total usage descending
-    var_totals = {v: sum(counts.values()) for v, counts in var_persona_counts.items()}
-    vars_sorted = sorted(var_totals, key=lambda v: -var_totals[v])
+        if not var_sc:
+            return ""
 
-    if vars_sorted:
-        max_count = max(var_totals.values()) or 1
+        var_totals = {v: sum(sc.values()) for v, sc in var_sc.items()}
+        vars_sorted = sorted(var_totals, key=lambda v: -var_totals[v])
+        max_cell = max(
+            cnt for sc in var_sc.values() for cnt in sc.values()
+        ) or 1
 
-        # Column headers
         th_cells = "".join(
-            f'<th class="vim-head">{p}</th>' for p in persons_ordered
+            f'<th class="vim-head">{s}</th>' for s in scenarios
         )
-        matrix_header = f'<tr><th class="vim-var">variable</th>{th_cells}<th class="vim-total">total</th></tr>'
+        header = (
+            f'<tr><th class="vim-var">variable</th>'
+            f'{th_cells}'
+            f'<th class="vim-total">total</th></tr>'
+        )
 
-        # Rows
-        matrix_rows = ""
+        rows = ""
         for v in vars_sorted:
-            counts = var_persona_counts[v]
+            sc = var_sc[v]
             total_v = var_totals[v]
-            intensity = total_v / max_count  # 0–1
             td_cells = ""
-            for p in persons_ordered:
-                cnt = counts.get(p, 0)
-                cell_intensity = cnt / max_count
-                alpha = round(0.08 + cell_intensity * 0.72, 3)
+            for s in scenarios:
+                cnt = sc.get(s, 0)
+                alpha = round(0.08 + (cnt / max_cell) * 0.72, 3) if cnt else 0
                 bg = f"rgba(56,139,253,{alpha})" if cnt else "transparent"
                 td_cells += (
                     f'<td class="vim-cell" style="background:{bg}">'
                     f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
                     f'</td>'
                 )
-            row_alpha = round(0.1 + intensity * 0.6, 3)
-            total_bg = f"rgba(56,139,253,{row_alpha})"
-            matrix_rows += (
+            t_alpha = round(0.1 + (total_v / (max_cell * len(scenarios))) * 0.7, 3)
+            rows += (
                 f'<tr>'
                 f'<td class="vim-var">{_html_escape(v)}</td>'
                 f'{td_cells}'
-                f'<td class="vim-total" style="background:{total_bg}"><b>{total_v}</b></td>'
+                f'<td class="vim-total" style="background:rgba(56,139,253,{t_alpha})">'
+                f'<b>{total_v}</b></td>'
                 f'</tr>\n'
             )
 
-        matrix_html = f"""
-<div class="vim-section">
-  <div class="vim-title">📊 Variable impact matrix</div>
-  <p class="vim-desc">Number of constraint expressions that reference each perception variable,
-  by persona. Sorted by total impact. Only variables used in at least one constraint are shown.</p>
+        return f"""<div class="vim-wrap">
+  <div class="vim-label">📊 Variable impact — constraints referencing each variable by scenario</div>
   <div class="vim-scroll">
     <table class="vim-table">
-      <thead>{matrix_header}</thead>
-      <tbody>{matrix_rows}</tbody>
+      <thead>{header}</thead>
+      <tbody>{rows}</tbody>
     </table>
   </div>
-</div>
-"""
-    else:
-        matrix_html = ""
+</div>"""
 
     # ── Per-person cards ───────────────────────────────────────────────────────
     cards_html = ""
@@ -329,6 +329,8 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                     f'</div>\n'
                 )
 
+        persona_matrix_html = _build_persona_matrix(person_name)
+
         cards_html += f"""
 <div class="card {card_cls}" data-card="{pi}">
   <div class="identity">
@@ -345,6 +347,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
       <div class="goal-text" id="cp-{pi}-goal">{goal}</div>
       <div class="scenario-label" id="cp-{pi}-scenario-label"></div>
     </div>
+    {persona_matrix_html}
     <div class="constraints" id="cp-{pi}-constraints">
       {agg_constraints_html}
     </div>
@@ -563,12 +566,12 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
 
 /* ── Variable impact matrix ──────────────────────────────── */
-.vim-section {{
-  background: #0d1117; border: 1px solid var(--border);
-  border-radius: 10px; padding: 18px 22px; margin-bottom: 24px;
+.vim-wrap {{
+  margin: 8px 0 12px; padding: 10px 12px;
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  border-radius: 7px;
 }}
-.vim-title {{ font-weight: 700; color: var(--fg); margin-bottom: 6px; font-size: 14px; }}
-.vim-desc  {{ font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }}
+.vim-label {{ font-size: 11px; color: var(--muted); margin-bottom: 8px; }}
 .vim-scroll {{ overflow-x: auto; }}
 .vim-table {{
   border-collapse: collapse; font-family: var(--mono); font-size: 11px;
@@ -709,8 +712,6 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 <div id="tooltip"></div>
 
 {gaps_html}
-
-{matrix_html}
 
 {cards_html}
 
