@@ -131,6 +131,96 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     else:
         gaps_html = ""
 
+    # ── Variable impact matrix ─────────────────────────────────────────────────
+    # Parse variable names from constraint expr fields, build
+    # variable × persona usage count matrix.
+    import re as _re
+
+    _Z3_KEYWORDS = {
+        "If", "then", "And", "Or", "Not", "Implies", "True", "False",
+        "true", "false", "and", "or", "not",
+    }
+    _VAR_RE = _re.compile(r'\b([a-z][a-z0-9_]*)\b')
+
+    def _extract_vars(expr: str) -> list[str]:
+        """Extract perception variable names from a Z3 expression string."""
+        return [
+            m for m in _VAR_RE.findall(expr)
+            if m not in _Z3_KEYWORDS and len(m) > 2
+        ]
+
+    # var → {persona → count}
+    var_persona_counts: dict[str, dict[str, int]] = {}
+
+    for r in all_results:
+        persona = r["person"]
+        for c in r.get("constraints", []):
+            if not isinstance(c, dict):
+                continue
+            expr = c.get("expr") or ""
+            for v in _extract_vars(expr):
+                if v not in var_persona_counts:
+                    var_persona_counts[v] = {}
+                var_persona_counts[v][persona] = (
+                    var_persona_counts[v].get(persona, 0) + 1
+                )
+
+    # Sort variables by total usage descending
+    var_totals = {v: sum(counts.values()) for v, counts in var_persona_counts.items()}
+    vars_sorted = sorted(var_totals, key=lambda v: -var_totals[v])
+
+    if vars_sorted:
+        max_count = max(var_totals.values()) or 1
+
+        # Column headers
+        th_cells = "".join(
+            f'<th class="vim-head">{p}</th>' for p in persons_ordered
+        )
+        matrix_header = f'<tr><th class="vim-var">variable</th>{th_cells}<th class="vim-total">total</th></tr>'
+
+        # Rows
+        matrix_rows = ""
+        for v in vars_sorted:
+            counts = var_persona_counts[v]
+            total_v = var_totals[v]
+            intensity = total_v / max_count  # 0–1
+            td_cells = ""
+            for p in persons_ordered:
+                cnt = counts.get(p, 0)
+                cell_intensity = cnt / max_count
+                alpha = round(0.08 + cell_intensity * 0.72, 3)
+                bg = f"rgba(56,139,253,{alpha})" if cnt else "transparent"
+                td_cells += (
+                    f'<td class="vim-cell" style="background:{bg}">'
+                    f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
+                    f'</td>'
+                )
+            row_alpha = round(0.1 + intensity * 0.6, 3)
+            total_bg = f"rgba(56,139,253,{row_alpha})"
+            matrix_rows += (
+                f'<tr>'
+                f'<td class="vim-var">{_html_escape(v)}</td>'
+                f'{td_cells}'
+                f'<td class="vim-total" style="background:{total_bg}"><b>{total_v}</b></td>'
+                f'</tr>\n'
+            )
+
+        matrix_html = f"""
+<div class="vim-section">
+  <div class="vim-title">📊 Variable impact matrix</div>
+  <p class="vim-desc">Number of constraint expressions that reference each perception variable,
+  by persona. Sorted by total impact. Only variables used in at least one constraint are shown.</p>
+  <div class="vim-scroll">
+    <table class="vim-table">
+      <thead>{matrix_header}</thead>
+      <tbody>{matrix_rows}</tbody>
+    </table>
+  </div>
+</div>
+"""
+    else:
+        matrix_html = ""
+
     # ── Per-person cards ───────────────────────────────────────────────────────
     cards_html = ""
     for pi, person_name in enumerate(persons_ordered):
@@ -472,6 +562,44 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .c-expr   {{ font-size: 10px; opacity: 0.55; white-space: pre-wrap; word-break: break-all; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
 
+/* ── Variable impact matrix ──────────────────────────────── */
+.vim-section {{
+  background: #0d1117; border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px 22px; margin-bottom: 24px;
+}}
+.vim-title {{ font-weight: 700; color: var(--fg); margin-bottom: 6px; font-size: 14px; }}
+.vim-desc  {{ font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; }}
+.vim-scroll {{ overflow-x: auto; }}
+.vim-table {{
+  border-collapse: collapse; font-family: var(--mono); font-size: 11px;
+  width: 100%;
+}}
+.vim-table thead tr {{
+  border-bottom: 1px solid var(--border);
+}}
+.vim-table th, .vim-table td {{
+  padding: 5px 12px; text-align: center; white-space: nowrap;
+}}
+.vim-var {{
+  text-align: left !important; color: var(--blue);
+  font-weight: 600; min-width: 200px; position: sticky; left: 0;
+  background: #0d1117; border-right: 1px solid var(--border);
+}}
+.vim-head {{
+  color: var(--muted); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .06em;
+}}
+.vim-cell {{
+  color: var(--fg); font-size: 11px; border-left: 1px solid #21262d;
+  min-width: 80px;
+}}
+.vim-total {{
+  font-weight: 700; color: var(--fg); border-left: 1px solid var(--border);
+  min-width: 60px;
+}}
+.vim-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+.vim-table tbody tr:hover .vim-var {{ background: #161b22; }}
+
 /* ── Never-exercised gaps ────────────────────────────────── */
 .gaps-section {{
   background: rgba(255,166,87,.08); border: 1px solid var(--orange);
@@ -581,6 +709,8 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 <div id="tooltip"></div>
 
 {gaps_html}
+
+{matrix_html}
 
 {cards_html}
 
