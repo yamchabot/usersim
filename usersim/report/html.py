@@ -179,7 +179,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         ) or 1
 
         th_cells = "".join(
-            f'<th class="vim-head">{s}</th>' for s in scenarios
+            f'<th class="vim-head"><span>{s}</span></th>' for s in scenarios
         )
         header = (
             f'<tr><th class="vim-var">variable</th>'
@@ -610,7 +610,15 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 }}
 .vim-head {{
   color: var(--muted); font-size: 10px; text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: .06em; vertical-align: bottom; padding-bottom: 6px !important;
+}}
+.vim-head span {{
+  display: inline-block;
+  transform: rotate(-60deg);
+  transform-origin: bottom left;
+  white-space: nowrap;
+  width: 1.2em;
+  padding-bottom: 4px;
 }}
 .vim-cell {{
   color: var(--fg); font-size: 11px; border-left: 1px solid #21262d;
