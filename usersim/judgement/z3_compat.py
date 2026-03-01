@@ -36,7 +36,12 @@ try:
         return expr
 
     def named(label: str, expr):
-        """Attach a human-readable name to any Z3 expression."""
+        """Attach a human-readable name to any Z3 expression.
+
+        Preserves the original Z3 expression repr as _expr_repr so the
+        report can show both the name and the underlying formula.
+        """
+        expr._expr_repr = getattr(expr, "_repr", repr(expr))
         expr._repr = label
         return expr
 
@@ -117,7 +122,12 @@ except Exception:
         return expr
 
     def named(label: str, expr):
-        """Attach a human-readable name to any expression."""
+        """Attach a human-readable name to any expression.
+
+        Preserves the original expression repr as _expr_repr so the
+        report can show both the name and the underlying formula.
+        """
+        expr._expr_repr = getattr(expr, "_repr", repr(expr))
         expr._repr = label
         return expr
 

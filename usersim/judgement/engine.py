@@ -144,8 +144,10 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
         else:
             antecedent_fired = None
 
+        expr_repr = getattr(c, "_expr_repr", None)
         constraint_results.append({
             "label":             label,
+            "expr":              expr_repr,
             "passed":            ok,
             "antecedent_fired":  antecedent_fired,
         })

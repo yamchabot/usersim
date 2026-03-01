@@ -40,6 +40,10 @@ def _html_attr(s: str) -> str:
     """Escape a string for use in an HTML attribute value."""
     return s.replace("&", "&amp;").replace('"', "&quot;").replace("'", "&#39;")
 
+def _html_escape(s: str) -> str:
+    """Escape a string for use in HTML text content."""
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 
 def generate_report(results: dict, output_path: str | Path) -> None:
     summary     = results.get("summary", {})
@@ -145,6 +149,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         constraint_pass:  dict[str, int]        = {}
         constraint_fired: dict[str, int | None] = {}
         constraint_labels: list[str] = []
+        constraint_exprs:  dict[str, str | None] = {}
         for r in person_results:
             if not r:
                 continue
@@ -152,10 +157,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 lbl   = c["label"]  if isinstance(c, dict) else c
                 psd   = c["passed"] if isinstance(c, dict) else True
                 fired = c.get("antecedent_fired") if isinstance(c, dict) else None
+                expr  = c.get("expr")              if isinstance(c, dict) else None
                 if lbl not in constraint_pass:
                     constraint_labels.append(lbl)
                     constraint_pass[lbl]  = 0
                     constraint_fired[lbl] = 0 if fired is not None else None
+                    constraint_exprs[lbl] = expr
                 if psd:
                     constraint_pass[lbl] += 1
                 if fired is True and constraint_fired[lbl] is not None:
@@ -176,15 +183,32 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             if n_f == 0 and _cf[lbl] is not None: return "–"
             return "✓" if n_p == _n else "✗" if n_p == 0 else "~"
 
-        agg_constraints_html = "".join(
-            '<div class="constraint {}">'
-            '<span class="c-status">{}</span>'
-            '<span class="c-label">{}</span>'
-            '<span class="c-count">{}/{}</span></div>'.format(
-                _constraint_cls(lbl), _constraint_sym(lbl),
-                lbl, constraint_pass[lbl], n_scenarios,
+        def _constraint_html(lbl, _ce=constraint_exprs):
+            expr = _ce.get(lbl)
+            expr_html = (
+                f'<span class="c-expr">{_html_escape(expr)}</span>'
+                if expr else ""
             )
-            for lbl in constraint_labels
+            return (
+                '<div class="constraint {cls}">'
+                '<span class="c-status">{sym}</span>'
+                '<span class="c-body">'
+                '<span class="c-label">{lbl}</span>'
+                '{expr}'
+                '</span>'
+                '<span class="c-count">{p}/{n}</span>'
+                '</div>'
+            ).format(
+                cls=_constraint_cls(lbl),
+                sym=_constraint_sym(lbl),
+                lbl=lbl,
+                expr=expr_html,
+                p=constraint_pass[lbl],
+                n=n_scenarios,
+            )
+
+        agg_constraints_html = "".join(
+            _constraint_html(lbl) for lbl in constraint_labels
         )
 
         # Dot grid — embed per-scenario constraint JSON on each ball
@@ -196,7 +220,8 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 viols   = r.get("violations", [])
                 desc    = r.get("description", "")
                 sc_constraints = [
-                    {"label": c["label"], "passed": c["passed"],
+                    {"label": c["label"], "expr": c.get("expr"),
+                     "passed": c["passed"],
                      "antecedent_fired": c.get("antecedent_fired")}
                     for c in r.get("constraints", []) if isinstance(c, dict)
                 ]
@@ -261,6 +286,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         cp2: dict[str, int] = {}
         cf2: dict[str, int | None] = {}
         cl2: list[str] = []
+        ce2: dict[str, str | None] = {}
         for r in person_results_2:
             if not r:
                 continue
@@ -268,10 +294,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 lbl   = c["label"]  if isinstance(c, dict) else c
                 psd   = c["passed"] if isinstance(c, dict) else True
                 fired = c.get("antecedent_fired") if isinstance(c, dict) else None
+                expr  = c.get("expr")              if isinstance(c, dict) else None
                 if lbl not in cp2:
                     cl2.append(lbl)
                     cp2[lbl] = 0
                     cf2[lbl] = 0 if fired is not None else None
+                    ce2[lbl] = expr
                 if psd:
                     cp2[lbl] += 1
                 if fired is True and cf2[lbl] is not None:
@@ -292,13 +320,19 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         # Build escaped HTML for JS template literal
         agg_html_parts = []
         for lbl in cl2:
-            cls  = _ac(lbl)
-            sym  = _as(lbl)
+            cls   = _ac(lbl)
+            sym   = _as(lbl)
             lbl_e = lbl.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
+            expr2 = ce2.get(lbl, "") or ""
+            expr_e = expr2.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${").replace("<", "&lt;").replace(">", "&gt;")
+            expr_part = f'<span class=\\"c-expr\\">{expr_e}</span>' if expr_e else ""
             agg_html_parts.append(
                 f'<div class=\\"constraint {cls}\\">'
                 f'<span class=\\"c-status\\">{sym}</span>'
+                f'<span class=\\"c-body\\">'
                 f'<span class=\\"c-label\\">{lbl_e}</span>'
+                f'{expr_part}'
+                f'</span>'
                 f'<span class=\\"c-count\\">{cp2[lbl]}/{n_sc2}</span></div>'
             )
         agg_html = "".join(agg_html_parts)
@@ -432,9 +466,11 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .constraint.c-fail    {{ border-color: var(--fail); background: rgba(248,81,73,.08); color: var(--fail); }}
 .constraint.c-partial {{ border-color: var(--orange); background: rgba(255,166,87,.08); color: var(--orange); }}
 .constraint.c-unexercised {{ opacity: 0.4; }}
-.c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; }}
-.c-label  {{ flex: 1; }}
-.c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; }}
+.c-status {{ margin-right: 6px; font-size: 10px; opacity: 0.8; flex-shrink: 0; }}
+.c-body   {{ flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }}
+.c-label  {{ font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
+.c-expr   {{ font-size: 10px; opacity: 0.55; white-space: pre-wrap; word-break: break-all; }}
+.c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
 
 /* ── Never-exercised gaps ────────────────────────────────── */
 .gaps-section {{
@@ -562,8 +598,9 @@ function buildConstraintHTML(constraints) {{
     const cls = unexercised ? 'c-pass c-unexercised'
               : c.passed    ? 'c-pass' : 'c-fail';
     const sym = unexercised ? '–' : c.passed ? '✓' : '✗';
+    const exprHtml = c.expr ? `<span class="c-expr">${{c.expr}}</span>` : '';
     return `<div class="constraint ${{cls}}"><span class="c-status">${{sym}}</span>`
-         + `<span class="c-label">${{c.label}}</span></div>`;
+         + `<span class="c-body"><span class="c-label">${{c.label}}</span>${{exprHtml}}</span></div>`;
   }}).join('');
 }}
 
