@@ -299,3 +299,91 @@ class TestDogfood:
         html = (self.EXAMPLE / self.REPORT).read_text()
         assert 'data-constraints=' in html
         assert 'data-scenario-name=' in html
+
+
+# ── always-fails example ──────────────────────────────────────────────────────
+
+class TestAlwaysFailsExample:
+    """
+    Verifies that usersim correctly reports constraint violations and
+    produces a valid report.html when the app is broken.
+    This is the canonical test for the failure path.
+    """
+    EXAMPLE   = EXAMPLES_DIR / "always-fails"
+    RESULTS   = "results.json"
+    REPORT    = "report.html"
+    SCENARIOS = ["normal_load", "low_load"]
+    PERSONAS  = 1
+    EXPECTED_FAILING_CONSTRAINTS = {
+        "reliability/error-rate-under-10pct",
+        "reliability/p99-under-1s",
+        "reliability/no-data-loss",
+    }
+
+    @pytest.fixture(scope="class")
+    def run_result(self):
+        return _run_usersim(self.EXAMPLE)
+
+    @pytest.fixture(scope="class")
+    def results(self, run_result):
+        return _load_results(self.EXAMPLE, self.RESULTS)
+
+    def test_exits_with_failure_code(self, run_result):
+        """usersim must exit non-zero when constraints are violated."""
+        assert run_result.returncode != 0, \
+            "Expected non-zero exit but got 0 — failing example unexpectedly passed"
+
+    def test_failure_output_mentions_persona(self, run_result):
+        output = run_result.stdout + run_result.stderr
+        assert "reliability_user" in output
+
+    def test_results_schema(self, results):
+        assert results.get("schema") == "usersim.matrix.v1"
+
+    def test_all_scenarios_present(self, results):
+        found = {r["scenario"] for r in results["results"]}
+        assert set(self.SCENARIOS) == found
+
+    def test_all_personas_present(self, results):
+        persons = {r["person"] for r in results["results"]}
+        assert len(persons) == self.PERSONAS
+
+    def test_all_results_unsatisfied(self, results):
+        """Every persona×scenario must fail — this is an always-fails example."""
+        passing = [r for r in results["results"] if r["satisfied"]]
+        assert passing == [], \
+            f"Expected all results to fail, but these passed: {[(r['person'], r['scenario']) for r in passing]}"
+
+    def test_expected_constraints_fail(self, results):
+        """Spot-check that the right constraint names appear as failures."""
+        failing_labels = {
+            c["label"]
+            for r in results["results"]
+            for c in r.get("constraints", [])
+            if not c.get("passed", True)
+        }
+        for label in self.EXPECTED_FAILING_CONSTRAINTS:
+            assert label in failing_labels, \
+                f"Expected constraint {label!r} to fail but it wasn't in failures: {failing_labels}"
+
+    def test_report_html_written(self, run_result):
+        report = self.EXAMPLE / self.REPORT
+        assert report.exists(), "report.html was not written even for a failing run"
+        assert report.stat().st_size > 1000
+
+    def test_report_html_is_valid_html(self, run_result):
+        html = (self.EXAMPLE / self.REPORT).read_text()
+        assert "<!DOCTYPE" in html or "<!doctype" in html
+
+    def test_report_html_shows_failures(self, run_result):
+        html = (self.EXAMPLE / self.REPORT).read_text()
+        # Persona name must appear
+        assert "reliability_user" in html
+        # Failing constraint labels must appear
+        for label in self.EXPECTED_FAILING_CONSTRAINTS:
+            assert label in html, f"Constraint label {label!r} missing from report.html"
+
+    def test_report_html_shows_both_scenarios(self, run_result):
+        html = (self.EXAMPLE / self.REPORT).read_text()
+        for scenario in self.SCENARIOS:
+            assert scenario in html, f"Scenario {scenario!r} missing from report.html"
