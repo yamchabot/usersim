@@ -87,7 +87,8 @@ class TestLocalNotesExample:
     RESULTS  = "user_simulation/results.json"
     REPORT   = "user_simulation/report.html"
     SCENARIOS = ["baseline", "capture_path", "persistence",
-                 "isolation", "sort_order", "offline", "context_switch"]
+                 "isolation", "sort_order", "offline", "context_switch",
+                 "search_heavy", "bulk_import"]
     PERSONAS  = 5   # number of user files in users/
 
     @pytest.fixture(scope="class")
@@ -153,7 +154,7 @@ class TestDataProcessorExample:
     EXAMPLE   = EXAMPLES_DIR / "data-processor"
     RESULTS   = "usersim/results.json"
     REPORT    = "usersim/report.html"
-    SCENARIOS = ["small", "medium", "large"]
+    SCENARIOS = ["small", "medium", "large", "empty", "errors", "concurrent"]
 
     @pytest.fixture(scope="class")
     def run_result(self):

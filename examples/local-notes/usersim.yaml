@@ -10,13 +10,24 @@ users:
   - user_simulation/users/*.py
 
 scenarios:
-  - baseline
-  - capture_path
-  - persistence
-  - isolation
-  - sort_order
-  - offline
-  - context_switch
+  - name: baseline
+    description: "Fresh load, no existing data — measures friction to first interaction"
+  - name: capture_path
+    description: "Click new note → type → autosave — measures capture readiness"
+  - name: persistence
+    description: "Create note, reload page — verifies data survives"
+  - name: isolation
+    description: "Two notebooks — verifies notes don't bleed between notebooks"
+  - name: sort_order
+    description: "10 notes created in sequence — verifies recency ordering"
+  - name: offline
+    description: "No network — verifies core operations work without connectivity"
+  - name: context_switch
+    description: "Switch between notebooks — measures UI transition latency"
+  - name: search_heavy
+    description: "50-note notebook, 3 searches — measures search latency and accuracy"
+  - name: bulk_import
+    description: "10 notes created in quick succession — measures autosave under load"
 
 output:
   results: user_simulation/results.json

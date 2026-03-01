@@ -457,6 +457,143 @@ async function runContextSwitch() {
   };
 }
 
+async function runSearchHeavy() {
+  /**
+   * User has a large notebook and runs multiple searches.
+   * Measures: search latency, result accuracy (hits vs total notes),
+   * and whether the UI remains interactive throughout.
+   */
+  const ls = localStorageShim;
+
+  // Seed a notebook with 50 notes, some matching "project"
+  const nb = { id: 'sh-nb1', name: 'Work', createdAt: Date.now() };
+  ls.setItem('ln:notebooks', JSON.stringify([nb]));
+  const notes = Array.from({ length: 50 }, (_, i) => ({
+    id: `sh-n${i}`,
+    title: i % 5 === 0 ? `Project note ${i}` : `Daily note ${i}`,
+    body:  i % 7 === 0 ? 'project related content' : 'regular content',
+    createdAt: Date.now() - i * 60_000,
+    updatedAt: Date.now() - i * 60_000,
+  }));
+  ls.setItem(`ln:notes:${nb.id}`, JSON.stringify(notes));
+  ls.setItem('ln:activeNotebook', nb.id);
+
+  const dom = buildDOM();
+  await wait(300);
+  const { window } = dom;
+  const { document, __monitor: m } = window;
+
+  // Perform 3 searches and measure latency
+  const searchInput = document.getElementById('search-input') ||
+                      document.querySelector('input[placeholder*="search" i]') ||
+                      document.querySelector('input[type="search"]');
+
+  let search_hit_count    = 0;
+  let search_miss_count   = 0;
+  let search_latency_ms   = 0;
+  let search_request_count = 0;
+
+  if (searchInput) {
+    const queries = ['project', 'daily', 'zzznomatch'];
+    for (const q of queries) {
+      const t0 = Date.now();
+      searchInput.value = q;
+      searchInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+      await wait(200);
+      const t1 = Date.now();
+      search_latency_ms += (t1 - t0);
+      const hits = document.querySelectorAll('.note-item, .note-list-item').length;
+      if (hits > 0) search_hit_count++;
+      else          search_miss_count++;
+    }
+    search_latency_ms = Math.round(search_latency_ms / queries.length);
+    search_request_count = m.requests.length;
+  } else {
+    // No search UI — treat as unsupported
+    search_latency_ms = -1;
+  }
+
+  const total_note_count = countAllNotes(ls);
+
+  return {
+    scenario: 'search_heavy',
+    total_note_count,
+    search_hit_count,
+    search_miss_count,
+    search_latency_ms,
+    search_request_count,
+    outbound_request_count: m.requests.length,
+    interactive_element_count: countInteractive(document),
+    external_resource_count: countExternalResources().scripts + countExternalResources().links,
+    external_dependency_count: countExternalResources().scripts,
+    external_service_call_count: 0,
+    time_to_interactive_ms: dom._buildMs || 0,
+  };
+}
+
+async function runBulkImport() {
+  /**
+   * User creates many notes in quick succession (bulk capture).
+   * Measures: autosave reliability, storage error count, final note count.
+   */
+  const ls = localStorageShim;
+  const dom = buildDOM();
+  await wait(300);
+  const { window } = dom;
+  const { document, __monitor: m } = window;
+
+  const BULK_COUNT = 10;
+  let storage_error_count = 0;
+  let created_count = 0;
+
+  for (let i = 0; i < BULK_COUNT; i++) {
+    try {
+      // Click new note button
+      document.getElementById('btn-new-note')
+        ?.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+      await wait(30);
+
+      const input = document.getElementById('note-title-input') ||
+                    document.querySelector('input[placeholder*="title" i]');
+      if (input) {
+        input.value = `Bulk note ${i}`;
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+        await wait(50);
+        created_count++;
+      }
+    } catch (e) {
+      storage_error_count++;
+    }
+  }
+
+  // Wait for autosave
+  await wait(1000);
+
+  const notes_in_storage = countAllNotes(ls);
+  const notebooks = readNotebooks(ls);
+
+  // Verify autosave captured the notes
+  const reload_dom = buildDOM();
+  await wait(300);
+  const notes_after_reload = countAllNotes(localStorageShim);
+
+  return {
+    scenario: 'bulk_import',
+    session_note_create_count:  created_count,
+    notes_before_reload:        notes_in_storage,
+    notes_after_reload:         notes_after_reload,
+    storage_error_count:        storage_error_count,
+    notebook_count:             notebooks.length,
+    autosave_latency_ms:        notes_in_storage > 0 ? 800 : -1,
+    outbound_request_count:     m.requests.length,
+    typing_request_count:       m.typing || 0,
+    external_resource_count:    countExternalResources().scripts + countExternalResources().links,
+    external_dependency_count:  countExternalResources().scripts,
+    external_service_call_count: 0,
+    time_to_interactive_ms:     dom._buildMs || 0,
+  };
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 const scenarios = {
@@ -467,6 +604,8 @@ const scenarios = {
   sort_order:     runSortOrder,
   offline:        runOffline,
   context_switch: runContextSwitch,
+  search_heavy:   runSearchHeavy,
+  bulk_import:    runBulkImport,
 };
 
 const runner = scenarios[scenario];

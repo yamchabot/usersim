@@ -14,9 +14,18 @@ users:
   - usersim/users.py
 
 scenarios:
-  - small    # 500 records  — should feel instant
-  - medium   # 10 000 records — noticeable but acceptable
-  - large    # 100 000 records — batch territory
+  - name: small
+    description: "500 records — should feel instant for interactive use"
+  - name: medium
+    description: "10 000 records — analyst workload, seconds are acceptable"
+  - name: large
+    description: "100 000 records — batch territory, throughput matters"
+  - name: empty
+    description: "0 records — edge case: operations must not hang or crash"
+  - name: errors
+    description: "500 records with ~10% corrupt fields — graceful degradation"
+  - name: concurrent
+    description: "500 records run 5 times back-to-back — worst-case timing"
 
 output:
   results: usersim/results.json

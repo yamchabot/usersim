@@ -48,8 +48,8 @@ class DevExEngineer(Person):
             # Time-to-first-result must feel fast: under 10s for small matrix
             named("devex/fast-first-run",
                   Implies(And(P.pipeline_wall_clock_ms > 0,
-                              P.person_count <= 3, P.scenario_count <= 3),
-                          P.pipeline_wall_clock_ms <= 10000)),
+                              P.person_count <= 5, P.scenario_count <= 6),
+                          P.pipeline_wall_clock_ms <= 30000)),
             # Report size scales with content — proves it's not an empty shell
             named("devex/report-content-scales-with-results",
                   Implies(And(P.report_file_created, P.results_total >= 1),

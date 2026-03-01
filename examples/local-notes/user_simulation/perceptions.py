@@ -42,6 +42,11 @@ def compute(metrics, scenario=None, person=None):
     oldest_note_age_days        = get("oldest_note_age_days")
     session_note_create_count   = get("session_note_create_count")
     offline_failure_count       = get("offline_failure_count")
+    search_hit_count            = get("search_hit_count")
+    search_miss_count           = get("search_miss_count")
+    search_latency_ms           = get("search_latency_ms")
+    search_request_count        = get("search_request_count")
+    outbound_request_count      = get("outbound_request_count")
 
     # ── Combining perceptions ────────────────────────────────────────────────
     # These produce values that can't be derived from any single metric alone.
@@ -135,6 +140,11 @@ def compute(metrics, scenario=None, person=None):
         "oldest_note_age_days":         oldest_note_age_days,
         "session_note_create_count":    session_note_create_count,
         "offline_failure_count":        offline_failure_count,
+        "search_hit_count":             search_hit_count,
+        "search_miss_count":            search_miss_count,
+        "search_latency_ms":            search_latency_ms,
+        "search_request_count":         search_request_count,
+        "outbound_request_count":       outbound_request_count,
         # Combining
         "total_request_count":          total_request_count,
         "arrival_friction_total":       arrival_friction_total,
