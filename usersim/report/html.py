@@ -639,27 +639,35 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   --mono:       'SF Mono', 'Consolas', 'Menlo', monospace;
 }}
 body.earth {{
-  /* backgrounds: dense dark bud — deep olive-black to earthy brown-green */
-  --bg:         #0e130a;
-  --card:       #181e10;
-  --card2:      #232b17;
-  --border:     #3d5228;
-  /* text: milky trichome — off-white with slight warmth */
-  --text:       #e8ead8;
-  --fg:         #e8ead8;
-  --muted:      #7a8f62;
-  /* semantic: real bud palette */
-  --pass:       #8aba52;   /* muted sage-lime bud green (not neon) */
+  /* bg: very deep purple-green, like the heart of a dense bud */
+  --bg:         #0d0e12;
+  --card:       #161a10;
+  --card2:      #1f2416;
+  --border:     #3a4830;
+  /* text: milky trichome crystal — cool off-white */
+  --text:       #e4e8d4;
+  --fg:         #e4e8d4;
+  --muted:      #748a5c;
+  /* semantic: purple lives inside the green — indigo + olive together */
+  --pass:       #88b84a;   /* sage-olive bud green                 */
   --fail:       #c46830;   /* rust-orange pistil hair              */
-  --blue:       #8878a8;   /* desaturated grey-purple trichome     */
-  --orange:     #b87c3a;   /* warm brown-amber stem / resin        */
+  --blue:       #8860c8;   /* indigo — the purple that grows in green tissue */
+  --orange:     #b8782e;   /* warm brown-amber resin / stems       */
   /* rgb variants */
-  --pass-rgb:   138,186,82;
+  --pass-rgb:   136,184,74;
   --fail-rgb:   196,104,48;
-  --orange-rgb: 184,124,58;
-  --accent-rgb: 90,130,45;   /* earthy olive heatmap cells */
-  --sink:       rgba(0,0,0,0.5);
-  --hover-bg:   rgba(138,186,82,0.06);
+  --orange-rgb: 184,120,46;
+  --accent-rgb: 88,120,44;   /* olive heatmap cells */
+  --sink:       rgba(0,0,0,0.55);
+  --hover-bg:   rgba(136,184,74,0.06);
+}}
+/* purple-green gradient: cards blend from deep indigo corner to olive green,
+   mimicking how purple grows *within* the bud's green tissue */
+body.earth .card {{
+  background-image: linear-gradient(145deg, rgba(80,40,130,0.18) 0%, transparent 50%);
+}}
+body.earth .gm-quad {{
+  background-image: linear-gradient(145deg, rgba(80,40,130,0.12) 0%, transparent 60%);
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
