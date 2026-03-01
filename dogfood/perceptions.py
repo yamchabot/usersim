@@ -1,8 +1,8 @@
 """
 perceptions.py — translate raw instrumentation metrics into domain observations.
 
-Returns ALL facts for every scenario with safe defaults so that persona
-constraints using Implies() have false antecedents for irrelevant scenarios
+Returns ALL facts for every path with safe defaults so that persona
+constraints using Implies() have false antecedents for irrelevant paths
 rather than raising AttributeError.
 
 Default strategy:

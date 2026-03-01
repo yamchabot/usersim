@@ -13,7 +13,7 @@ perceptions: "python3 usersim/perceptions.py"
 users:
   - usersim/users.py
 
-scenarios:
+paths:
   - name: small
     description: "500 records — should feel instant for interactive use"
   - name: medium

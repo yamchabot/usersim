@@ -145,11 +145,19 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
             antecedent_fired = None
 
         expr_repr = getattr(c, "_expr_repr", None) or getattr(c, "_repr", None) or repr(c)
+
+        # When a constraint fails and Z3 is available, generate a target
+        # assignment: what values would satisfy this constraint?
+        target = None
+        if not ok and Z3_REAL:
+            target = _target_assignment(c, fact_vars, assignments)
+
         constraint_results.append({
             "label":             label,
             "expr":              expr_repr,
             "passed":            ok,
             "antecedent_fired":  antecedent_fired,
+            "target":            target,
         })
         if ok:
             passed += 1
@@ -169,6 +177,60 @@ def evaluate_person(person: "Person", facts: dict) -> dict:
         "constraints": constraint_results,
         "violations":  violations,
     }
+
+
+def _target_assignment(constraint, fact_vars: dict, assignments: dict) -> "dict | None":
+    """
+    Given a failing constraint, ask Z3 to find a satisfying assignment of the
+    observed variables that would make the constraint pass.
+
+    Returns a dict like:
+      {"error_count": {"current": 8, "target": 2, "direction": "decrease"}}
+    or None if Z3 can't find one (e.g. constraint is unsatisfiable in general).
+    """
+    if not Z3_REAL:
+        return None
+    try:
+        import re as _re
+        _Z3K = {"If", "And", "Or", "Not", "Implies", "True", "False",
+                "true", "false", "and", "or", "not"}
+        _VRE = _re.compile(r'\b([a-z][a-z0-9_]*)\b')
+        expr_repr = getattr(constraint, "_expr_repr", None) or repr(constraint)
+        var_names = [m for m in _VRE.findall(expr_repr)
+                     if m not in _Z3K and len(m) > 2 and m in fact_vars]
+
+        if not var_names:
+            return None
+
+        s = Solver()
+        s.add(constraint)
+        # Add the constraint itself as the only thing to satisfy
+        # Let the observed variables be free (Z3 finds satisfying values)
+        if s.check() != sat:
+            return None  # constraint is fundamentally unsatisfiable
+
+        model = s.model()
+        result = {}
+        for name in var_names:
+            current = assignments.get(name)
+            if current is None:
+                continue
+            z3_val = model.eval(Real(name), model_completion=True)
+            try:
+                target_val = float(z3_val.as_fraction()) if hasattr(z3_val, "as_fraction") else float(str(z3_val))
+            except Exception:
+                continue
+            if abs(target_val - current) < 1e-9:
+                continue  # same value, not informative
+            direction = "decrease" if target_val < current else "increase"
+            result[name] = {
+                "current":   round(current, 4) if isinstance(current, float) else current,
+                "target":    round(target_val, 4),
+                "direction": direction,
+            }
+        return result if result else None
+    except Exception:
+        return None
 
 
 def _load_perceptions_doc(source) -> dict:
@@ -195,7 +257,7 @@ def _evaluate(perceptions_doc: dict, user_files: list) -> dict:
     from usersim.schema import RESULTS_SCHEMA
 
     facts       = perceptions_doc["facts"]
-    scenario    = perceptions_doc.get("scenario", "unknown")
+    path    = perceptions_doc.get("path", "unknown")
     person_name = perceptions_doc.get("person", None)
     if person_name == "all":
         person_name = None
@@ -205,12 +267,12 @@ def _evaluate(perceptions_doc: dict, user_files: list) -> dict:
     person_results = []
     for person in persons:
         result = evaluate_person(person, facts)
-        result["scenario"] = scenario
+        result["path"] = path
         person_results.append(result)
 
     return {
         "schema":   RESULTS_SCHEMA,
-        "scenario": scenario,
+        "path": path,
         "results":  person_results,
         "summary": {
             "total":     len(person_results),
@@ -253,7 +315,7 @@ def run_matrix(
 ) -> dict:
     """
     Run judgement across all perceptions JSON files in a directory.
-    Returns a matrix of person × scenario results.
+    Returns a matrix of person × path results.
     """
     perceptions_dir = Path(perceptions_dir)
     files = sorted(perceptions_dir.glob("*.json"))
@@ -263,11 +325,11 @@ def run_matrix(
         with open(pf) as f:
             doc = json.load(f)
         facts    = doc.get("facts", {})
-        scenario = doc.get("scenario", pf.stem)
+        path = doc.get("path", pf.stem)
         persons  = _load_persons(user_files)
         for person in persons:
             r = evaluate_person(person, facts)
-            r["scenario"] = scenario
+            r["path"] = path
             all_results.append(r)
 
     satisfied = sum(1 for r in all_results if r["satisfied"])
