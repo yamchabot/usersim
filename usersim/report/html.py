@@ -262,8 +262,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 gm_pers_sc.setdefault(persona, {})
                 gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
 
+    # Exclude totals/sums that dominate and obscure the rest of the matrix
+    _MATRIX_EXCLUDE = {"results_total"}
+
     all_vars  = sorted(
-        {v for d in (gm_var_sc, gm_var_pers) for v in d},
+        {v for d in (gm_var_sc, gm_var_pers) for v in d
+         if v not in _MATRIX_EXCLUDE},
         key=lambda v: -(sum(gm_var_sc.get(v, {}).values()) +
                         sum(gm_var_pers.get(v, {}).values()))
     )
@@ -328,6 +332,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                     if v not in var_sc:
                         var_sc[v] = {}
                     var_sc[v][s] = var_sc[v].get(s, 0) + 1
+
+        # Remove variables that dominate and obscure the rest
+        for excl in _MATRIX_EXCLUDE:
+            var_sc.pop(excl, None)
 
         if not var_sc:
             return ""
