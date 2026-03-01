@@ -211,7 +211,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             for c in col_keys:
                 cnt = rc.get(c, 0)
                 alpha = round(0.07 + (cnt / max_cell) * 0.73, 3) if cnt else 0
-                bg = f"rgba(56,139,253,{alpha})" if cnt else "transparent"
+                bg = f"rgba(var(--accent-rgb),{alpha})" if cnt else "transparent"
                 tds += (
                     f'<td class="gm-cell" style="background:{bg}">'
                     f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
@@ -222,7 +222,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 f'<tr>'
                 f'<td class="gm-rowhead">{_html_escape(row_fmt(r))}</td>'
                 f'{tds}'
-                f'<td class="gm-total" style="background:rgba(56,139,253,{t_alpha})">'
+                f'<td class="gm-total" style="background:rgba(var(--accent-rgb),{t_alpha})">'
                 f'<b>{total_r}</b></td>'
                 f'</tr>\n'
             )
@@ -355,7 +355,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             for s in scenarios:
                 cnt = sc.get(s, 0)
                 alpha = round(0.08 + (cnt / max_cell) * 0.72, 3) if cnt else 0
-                bg = f"rgba(56,139,253,{alpha})" if cnt else "transparent"
+                bg = f"rgba(var(--accent-rgb),{alpha})" if cnt else "transparent"
                 td_cells += (
                     f'<td class="vim-cell" style="background:{bg}">'
                     f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
@@ -366,7 +366,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 f'<tr>'
                 f'<td class="vim-var">{_html_escape(v)}</td>'
                 f'{td_cells}'
-                f'<td class="vim-total" style="background:rgba(56,139,253,{t_alpha})">'
+                f'<td class="vim-total" style="background:rgba(var(--accent-rgb),{t_alpha})">'
                 f'<b>{total_v}</b></td>'
                 f'</tr>\n'
             )
@@ -621,7 +621,21 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   --fail:    #f85149;
   --blue:    #58a6ff;
   --orange:  #ffa657;
+  --accent-rgb: 56,139,253;
   --mono:    'SF Mono', 'Consolas', 'Menlo', monospace;
+}}
+body.earth {{
+  --bg:      #1c1710;
+  --card:    #25200f;
+  --card2:   #2e2718;
+  --border:  #4a3f2c;
+  --text:    #ede0c8;
+  --muted:   #9e8f76;
+  --pass:    #7aaa4a;
+  --fail:    #c45f3a;
+  --blue:    #c4913a;
+  --orange:  #d4a44c;
+  --accent-rgb: 196,145,58;
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
@@ -738,6 +752,17 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .c-label  {{ font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
 .c-expr   {{ font-size: 10px; opacity: 0.55; white-space: pre-wrap; word-break: break-all; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
+
+/* ── Palette toggle ──────────────────────────────────────── */
+.palette-toggle {{
+  position: fixed; top: 16px; right: 20px; z-index: 999;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 10px;
+  font-size: 18px; cursor: pointer; line-height: 1;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  transition: background 0.2s, border-color 0.2s;
+}}
+.palette-toggle:hover {{ background: var(--card2); }}
 
 /* ── Global coverage matrices (2×2) ─────────────────────── */
 .gm-section {{
@@ -940,6 +965,7 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 </head>
 <body>
 
+<button class="palette-toggle" id="paletteToggle" title="Switch colour palette" onclick="togglePalette()">🎨</button>
 <header>
   <div>
     <h1>🐉 User Simulation Report</h1>
@@ -1079,6 +1105,26 @@ document.addEventListener('keydown', e => {{
   if (e.key === 'Escape')
     Object.keys(selectedBall).forEach(k => deselectCard(parseInt(k, 10)));
 }});
+
+// ── Palette toggle ────────────────────────────────────────────────────────
+window._PALETTES = ['default', 'earth'];
+window._paletteIdx = parseInt(localStorage.getItem('usersim-palette') || '0', 10);
+
+window.applyPalette = function() {{
+  document.body.className = window._paletteIdx === 0 ? '' : window._PALETTES[window._paletteIdx];
+  const btn = document.getElementById('paletteToggle');
+  if (btn) btn.title = window._paletteIdx === 0
+    ? 'Switch to earth tones'
+    : 'Switch to default palette';
+}};
+
+window.togglePalette = function() {{
+  window._paletteIdx = (window._paletteIdx + 1) % window._PALETTES.length;
+  localStorage.setItem('usersim-palette', window._paletteIdx);
+  window.applyPalette();
+}};
+
+window.applyPalette();
 </script>
 
 </body>
