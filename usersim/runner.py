@@ -210,22 +210,32 @@ def run_from_config(
         if verbose:
             print(f"[usersim] scenario: {scenario}", file=sys.stderr)
 
-        # Step 1: run instrumentation
-        metrics_doc = _run_command(instr_cmd, stdin_data=None, scenario=scenario,
-                                   base_dir=base_dir, label="instrumentation", verbose=verbose)
-        validate_metrics(metrics_doc)
+        try:
+            # Step 1: run instrumentation
+            metrics_doc = _run_command(instr_cmd, stdin_data=None, scenario=scenario,
+                                       base_dir=base_dir, label="instrumentation", verbose=verbose)
+            validate_metrics(metrics_doc)
 
-        # Step 2: run perceptions
-        perc_doc = _run_perceptions_cmd(perc_cmd, metrics_doc, scenario=scenario,
-                                        base_dir=base_dir, verbose=verbose)
-        validate_perceptions(perc_doc)
+            # Step 2: run perceptions
+            perc_doc = _run_perceptions_cmd(perc_cmd, metrics_doc, scenario=scenario,
+                                            base_dir=base_dir, verbose=verbose)
+            validate_perceptions(perc_doc)
 
-        if verbose:
-            print(f"[usersim]   {len(perc_doc['facts'])} facts → judgement", file=sys.stderr)
+            if verbose:
+                print(f"[usersim]   {len(perc_doc['facts'])} facts → judgement", file=sys.stderr)
 
-        # Step 3: judgement (in-process, no output yet — collect all first)
-        from usersim.judgement.engine import _evaluate
-        result = _evaluate(perc_doc, user_files)
+            # Step 3: judgement (in-process, no output yet — collect all first)
+            from usersim.judgement.engine import _evaluate
+            result = _evaluate(perc_doc, user_files)
+
+        except (RuntimeError, ValueError) as exc:
+            # Instrumentation or perceptions failed — record error result and continue
+            print(f"[usersim] scenario {scenario!r} error: {exc}", file=sys.stderr)
+            result = {
+                "results": [],
+                "error": str(exc),
+                "scenario": scenario,
+            }
 
         # Inject scenario description (if declared in config) into each result entry
         sc_desc = cfg.get("_scenario_descriptions", {}).get(scenario, "")

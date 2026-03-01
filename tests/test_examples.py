@@ -227,12 +227,7 @@ class TestDogfood:
         "violation_health",
         "broken_example",
     ]
-    PERSONAS  = 16
-    # constraint_health_auditor intentionally has known failing constraints
-    # (health/some-violations-occur, health/antecedents-fire-meaningfully,
-    #  health/broken-does-not-crash-usersim) — these surface real gaps in
-    # usersim itself and should remain failing until the gaps are fixed.
-    KNOWN_FAILING_PERSONAS = {"constraint_health_auditor"}
+    PERSONAS  = 15
 
     @pytest.fixture(scope="class")
     def run_result(self):
@@ -243,21 +238,13 @@ class TestDogfood:
         return _load_results(self.EXAMPLE, self.RESULTS)
 
     def test_exits_cleanly(self, run_result):
-        # Exit code 2 = some personas unsatisfied (expected: only KNOWN_FAILING_PERSONAS)
-        assert run_result.returncode in (0, 2), (
-            f"usersim run crashed unexpectedly:\n{run_result.stderr}"
+        assert run_result.returncode == 0, (
+            f"usersim run failed:\n{run_result.stderr}"
         )
 
-    def test_all_checks_passed_or_only_known_failures(self, run_result):
-        output = run_result.stdout + run_result.stderr
-        if "ALL CHECKS PASSED" in output:
-            return
-        # Otherwise verify only known-failing personas appear in the output
-        for line in output.splitlines():
-            if line.startswith("❌"):
-                persona = line.split("(")[0].replace("❌", "").strip()
-                assert persona in self.KNOWN_FAILING_PERSONAS, \
-                    f"Unexpected failing persona: {persona!r}"
+    def test_all_checks_passed_message(self, run_result):
+        assert "ALL CHECKS PASSED" in run_result.stdout or \
+               "ALL CHECKS PASSED" in run_result.stderr
 
     def test_results_schema(self, results):
         assert results.get("schema") == "usersim.matrix.v1"
@@ -275,13 +262,10 @@ class TestDogfood:
         assert len(persons) == self.PERSONAS, \
             f"Expected {self.PERSONAS} personas, got {len(persons)}: {sorted(persons)}"
 
-    def test_every_result_satisfied_except_known(self, results):
-        failures = [
-            r for r in results["results"]
-            if not r["satisfied"] and r["person"] not in self.KNOWN_FAILING_PERSONAS
-        ]
+    def test_every_result_satisfied(self, results):
+        failures = [r for r in results["results"] if not r["satisfied"]]
         assert failures == [], \
-            f"Unexpected failures: {[(r['person'], r['scenario']) for r in failures]}"
+            f"Unsatisfied: {[(r['person'], r['scenario']) for r in failures]}"
 
     def test_every_result_has_constraints(self, results):
         for r in results["results"]:
@@ -290,12 +274,11 @@ class TestDogfood:
                 f"No constraints for {r['person']} / {r['scenario']}"
 
     def test_zero_vacuous_constraints(self, results):
-        """full_integration scenario must fire every antecedent (except known-failing personas)."""
+        """full_integration scenario must fire every antecedent."""
         vacuous = [
             (r["person"], c["label"])
             for r in results["results"]
             if r["scenario"] == "full_integration"
-            and r["person"] not in self.KNOWN_FAILING_PERSONAS
             for c in r.get("constraints", [])
             if c.get("antecedent_fired") is False
         ]
