@@ -19,6 +19,8 @@ Other subcommands (for one-off use, no config needed):
     usersim judge --perceptions p.json ...    # from a file
     usersim judge --perceptions-dir perc/ ... # matrix mode
     usersim report --results results.json     # generate HTML report
+    usersim audit --results results.json      # constraint health analysis
+    usersim calibrate                         # print perception values per scenario
     usersim init [DIR]                        # scaffold a new project
 """
 
@@ -106,6 +108,48 @@ def cmd_init(args):
     target = Path(args.dir or ".")
     init_project(target)
     return 0
+
+
+def cmd_audit(args):
+    """Analyse a results.json file for constraint health problems."""
+    from usersim.audit import run_audit, print_audit
+    from usersim.runner import load_config
+
+    if args.results and args.results != "-":
+        with open(args.results) as f:
+            results = json.load(f)
+    else:
+        results = json.load(sys.stdin)
+
+    config = None
+    try:
+        config = load_config(args.config)
+    except Exception:
+        pass
+
+    audit = run_audit(results, config=config)
+
+    if args.json:
+        print(json.dumps(audit, indent=2))
+    else:
+        print_audit(audit)
+
+    # Exit 1 if any vacuous constraints found (useful in CI)
+    return 1 if audit["summary"]["vacuous_count"] > 0 else 0
+
+
+def cmd_calibrate(args):
+    """Print actual perception values per scenario for threshold calibration."""
+    from usersim.runner import load_config
+    from usersim.calibrate import run_calibrate
+
+    try:
+        config = load_config(args.config)
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+
+    return run_calibrate(config, scenario_override=args.scenario or None)
 
 
 def _print_summary(results: dict, file=sys.stderr) -> None:
@@ -311,6 +355,46 @@ def main(argv=None):
     p_init = sub.add_parser("init", help="Scaffold a new usersim project in DIR (default: cwd)")
     p_init.add_argument("dir", nargs="?", metavar="DIR")
     p_init.set_defaults(func=cmd_init)
+
+    # ── audit ─────────────────────────────────────────────────────────────────
+    p_audit = sub.add_parser(
+        "audit",
+        help="Analyse results.json for constraint health problems",
+        description=(
+            "Detects: vacuous constraints, trivially-passing constraints, dead perceptions,\n"
+            "constraint count imbalance, and variable density distribution.\n\n"
+            "Exits 1 if any vacuous constraints are found (useful in CI)."
+        ),
+    )
+    p_audit.add_argument(
+        "--results", metavar="FILE",
+        help="Results JSON file; omit or use '-' to read from stdin",
+    )
+    p_audit.add_argument(
+        "--config", metavar="FILE",
+        help="Config file (for locating perceptions.py; default: usersim.yaml)",
+    )
+    p_audit.add_argument("--json", action="store_true", help="Output as JSON")
+    p_audit.set_defaults(func=cmd_audit)
+
+    # ── calibrate ─────────────────────────────────────────────────────────────
+    p_cal = sub.add_parser(
+        "calibrate",
+        help="Print actual perception values per scenario for threshold calibration",
+        description=(
+            "Runs instrumentation + perceptions for each scenario and prints the\n"
+            "perception dict.  Use this to set constraint thresholds at realistic values."
+        ),
+    )
+    p_cal.add_argument(
+        "--config", metavar="FILE",
+        help="Config file (default: usersim.yaml)",
+    )
+    p_cal.add_argument(
+        "--scenario", metavar="NAME",
+        help="Run a single scenario only",
+    )
+    p_cal.set_defaults(func=cmd_calibrate)
 
     args = parser.parse_args(argv)
     sys.exit(args.func(args))

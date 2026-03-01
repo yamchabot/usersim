@@ -16,114 +16,30 @@ that once asked hard questions now pass trivially. This skill is about keeping t
 - When all personas pass 100% for many consecutive runs with no failures ever caught
 - When adding a new persona and you suspect it duplicates existing coverage
 - When a constraint fails and you don't understand why
-- Periodically — every few weeks on an active project
+- Periodically every few weeks on an active project
 
 ---
 
 ## The audit
 
-Save this as `user_simulation/audit.py` and run it after every maintenance cycle:
+```bash
+usersim audit --results user_simulation/results.json
+```
 
-```python
-# audit.py
-import json, re, glob
-from collections import defaultdict
+Run this after every maintenance cycle. It detects all five health problems in one pass
+and exits 1 if vacuous constraints are found (safe to add to CI).
 
-with open("user_simulation/results.json") as f:
-    r = json.load(f)
+To also detect dead perceptions (perceptions computed but never referenced by any constraint),
+pass the config so usersim can locate perceptions.py:
 
-results       = r["results"]
-summary       = r["summary"]
-all_persons   = sorted({x["person"]   for x in results})
-all_scenarios = sorted({x["scenario"] for x in results})
+```bash
+usersim audit --results user_simulation/results.json --config usersim.yaml
+```
 
-print(f"\n=== usersim constraint audit ===")
-print(f"Persons: {len(all_persons)}  Scenarios: {len(all_scenarios)}")
-print(f"Effective tests:  {summary.get('effective_tests', '?')}")
-print(f"Constraint evals: {summary.get('constraint_evals', '?')}")
+Output as JSON for scripting or historical tracking:
 
-# 1. Vacuous constraints
-label_ever_fired = defaultdict(lambda: defaultdict(bool))
-for x in results:
-    for c in x.get("constraints", []):
-        if c.get("antecedent_fired") is True:
-            label_ever_fired[x["person"]][c["label"]] = True
-
-print("\n--- Vacuous constraints (antecedent never fires in any scenario) ---")
-seen = set()
-for x in results:
-    for c in x.get("constraints", []):
-        if c.get("antecedent_fired") is False:
-            key = (x["person"], c["label"])
-            if key not in seen and not label_ever_fired[x["person"]][c["label"]]:
-                seen.add(key)
-                print(f"  {x['person']}: {c['label']}")
-if not seen:
-    print("  none ✓")
-
-# 2. Always-passing constraints
-print("\n--- Always-passing (100% pass rate -- verify they ask hard questions) ---")
-label_stats = defaultdict(lambda: {"pass": 0, "total": 0})
-for x in results:
-    for c in x.get("constraints", []):
-        if c.get("antecedent_fired") is not False:
-            key = (x["person"], c["label"])
-            label_stats[key]["total"] += 1
-            if c.get("passed"):
-                label_stats[key]["pass"] += 1
-
-trivial = [(k, v) for k, v in label_stats.items()
-           if v["total"] >= len(all_scenarios) and v["pass"] == v["total"]]
-for (person, label), v in sorted(trivial)[:20]:
-    print(f"  {person}: {label}  ({v['pass']}/{v['total']})")
-if not trivial:
-    print("  none (every constraint has at least one failure scenario)")
-
-# 3. Constraint count per persona
-print("\n--- Constraint count per persona ---")
-for person in all_persons:
-    pr = [x for x in results if x["person"] == person]
-    counts = [len(x.get("constraints", [])) for x in pr]
-    avg = sum(counts) / len(counts) if counts else 0
-    print(f"  {person:<30} {int(avg):>4} constraints/scenario")
-
-# 4. Variable density
-keywords = {"If","then","And","Or","Not","Implies","True","False","else"}
-density = {}
-for x in results:
-    for c in x.get("constraints", []):
-        if c.get("antecedent_fired") is not False:
-            label = c["label"]
-            if label not in density:
-                vs = set(t for t in re.findall(r'\b[a-z][a-z0-9_]*\b', c.get("expr",""))
-                         if t not in keywords)
-                density[label] = len(vs)
-
-print("\n--- Most coverage (top 10 by variable count) ---")
-for label, n in sorted(density.items(), key=lambda x: -x[1])[:10]:
-    print(f"  {n} vars  {label}")
-print("\n--- Least coverage (bottom 10, possible trivial checks) ---")
-for label, n in sorted(density.items(), key=lambda x: x[1])[:10]:
-    print(f"  {n} vars  {label}")
-
-# 5. Dead perceptions
-print("\n--- Dead perceptions (computed but never referenced in constraints) ---")
-import os, sys
-sys.path.insert(0, "user_simulation")
-try:
-    import inspect, perceptions as P_mod
-    src = inspect.getsource(P_mod.compute)
-    perception_keys = set(re.findall(r'"([a-z][a-z0-9_]*)"', src))
-    referenced = set()
-    for path in glob.glob("user_simulation/users/*.py"):
-        with open(path) as f:
-            for m in re.finditer(r'P\.([a-z][a-z0-9_]*)', f.read()):
-                referenced.add(m.group(1))
-    dead = perception_keys - referenced
-    for k in sorted(dead): print(f"  {k}")
-    if not dead: print("  none ✓")
-except Exception as e:
-    print(f"  (could not load perceptions module: {e})")
+```bash
+usersim audit --results user_simulation/results.json --json
 ```
 
 ---
@@ -132,36 +48,34 @@ except Exception as e:
 
 ### 1. Vacuous constraints
 
-The antecedent of an `Implies(...)` never becomes true in any scenario. Always passes —
+The antecedent of an `Implies(...)` never becomes true in any scenario. Always passes --
 but only because it was never evaluated. False confidence.
 
-**Fix:** add or update a scenario so the antecedent fires. Add `full_integration` if missing.
-Delete the constraint if no scenario will ever exercise the antecedent.
+`usersim audit` flags these. Fix: add or update a scenario so the antecedent fires.
+The `full_integration` scenario is designed to prevent this -- make sure it runs all
+subsystems and exercises every antecedent. Delete constraints whose antecedent can never
+fire in any scenario.
 
 ---
 
 ### 2. Trivially passing constraints
 
-Passes in every scenario — not because the system is correct, but because the threshold is
+Passes in every scenario -- not because the system is correct, but because the threshold is
 too loose to ever fail.
 
 **The broken-system test:** imagine the application regressed in a way a real user would
 notice. Would this constraint catch it? If not, it is theater.
 
-Examples of trivial constraints:
-```python
-P.wall_ms <= 999999             # always passes
-P.exit_code >= -1               # trivially true
-Implies(P.results_total >= 0, ...)  # antecedent always true
-```
+`usersim audit` lists all 100%-passing constraints. Inspect each one:
 
-**Fix:** recalibrate. Read actual perception values and set a threshold so a 25-30% regression
-causes failure. Or replace with a relationship constraint that scales automatically:
 ```python
-# Before: absolute, trivially passes
-Implies(P.wall_ms > 0, P.wall_ms <= 60000)
+# Trivial: always passes regardless of actual value
+P.wall_ms <= 999999
 
-# After: scales with matrix size, catches proportional regressions
+# Trivial: antecedent always true
+Implies(P.results_total >= 0, P.results_satisfied >= 0)
+
+# Better: scales with matrix size, catches proportional regressions
 Implies(P.wall_ms > 0, P.wall_ms <= P.results_total * P.person_count * 3000)
 ```
 
@@ -170,10 +84,10 @@ Implies(P.wall_ms > 0, P.wall_ms <= P.results_total * P.person_count * 3000)
 ### 3. Dead perceptions
 
 A key computed in `perceptions.py` but referenced by no constraint anywhere.
-The analyst is doing work nobody reads.
 
-**Fix:** delete the perception, or add a constraint that uses it. If you added it for a
-future constraint that never got written, write the constraint now or remove the perception.
+`usersim audit --config usersim.yaml` flags these. Fix: delete the perception, or write
+the constraint that was missing. Check the planning docs (METRICS.md, PERCEPTION_PLAN.md) --
+if the key was never in the plan either, delete it.
 
 ---
 
@@ -181,19 +95,19 @@ future constraint that never got written, write the constraint now or remove the
 
 The same logical check appears in multiple persona files under different names.
 
-**Fix:** extract to `constraint_library.py`. Replace both inline occurrences with
-`*group_function(P)`. Parameterize when personas need different tolerances.
+`usersim audit` surfaces this through the variable density report: identical `expr` patterns
+across different persona/label pairs. Fix: extract to `constraint_library.py` and replace
+both inline occurrences with `*group_function(P)`.
 
 ---
 
 ### 5. Persona drift
 
 The persona's `goal` field no longer matches what its constraints actually check.
-Happens when constraints are added opportunistically without asking "does this match what
-this persona cares about?"
+Happens when constraints are added opportunistically.
 
-**Fix:** re-read the goal. For each constraint ask: would this person actually care about
-this? Remove what doesn't belong. Add what's missing.
+No automated detection. Fix: re-read the goal. For each constraint ask: would this person
+actually care about this? Remove what does not belong. Add what is missing.
 
 ---
 
@@ -201,29 +115,16 @@ this? Remove what doesn't belong. Add what's missing.
 
 After any significant application change, print actual perception values before adjusting:
 
-```python
-# calibrate.py
-import subprocess, json, os, sys
-sys.path.insert(0, "user_simulation")
-import perceptions as P_mod
-
-for scenario in ["normal_run", "bad_config", "full_integration"]:
-    env = {**os.environ, "USERSIM_SCENARIO": scenario}
-    r = subprocess.run(["python3", "user_simulation/instrumentation.py"],
-                       capture_output=True, text=True, env=env)
-    if r.returncode != 0 or not r.stdout.strip():
-        print(f"{scenario}: FAILED"); continue
-    raw = json.loads(r.stdout)
-    p = P_mod.compute(raw["metrics"], scenario=scenario)
-    print(f"\n--- {scenario} ---")
-    for k, v in sorted(p.items()):
-        print(f"  {k}: {v}")
+```bash
+usersim calibrate                         # all scenarios
+usersim calibrate --scenario full_integration  # one scenario
 ```
 
 Rules:
 - Threshold should fail if the metric regresses 25-30%
 - If actual is always 100x below threshold, tighten it
-- Prefer relationship constraints over absolute thresholds — they self-calibrate as the system grows
+- Prefer relationship constraints over absolute thresholds -- they self-calibrate as the
+  system grows: `P.wall_ms <= P.results_total * P.person_count * 3000`
 
 ---
 
@@ -239,8 +140,7 @@ named("devops/pipeline-exits-0", Implies(P.pipeline_exit_code >= 0, P.pipeline_e
 def exit_code_contract(P):
     return [named("pipeline/must-exit-0",
                   Implies(P.pipeline_exit_code >= 0, P.pipeline_exit_code == 0))]
-# Both persona files:
-#   *exit_code_contract(P),
+# Both persona files: *exit_code_contract(P),
 ```
 
 ### Condition a vacuous constraint
@@ -293,16 +193,14 @@ from its persona-specific constraints.
 
 ## Tracking health over time
 
-After each maintenance cycle, append a record to `user_simulation/docs/CONSTRAINT_HISTORY.md`:
+Append a record after each maintenance cycle:
 
-```python
-import json, datetime
-r = json.load(open("user_simulation/results.json"))
-s = r["summary"]
-print(f"| {datetime.date.today()} "
-      f"| {s.get('effective_tests','?'):>8} "
-      f"| {s.get('constraint_evals','?'):>6} "
-      f"| {s['satisfied']}/{s['total']} |")
+```bash
+usersim audit --results user_simulation/results.json --json | python3 -c "
+import json, sys, datetime
+d = json.load(sys.stdin)['summary']
+print(f'| {datetime.date.today()} | {d[\"effective_tests\"]:>8} | {d[\"constraint_evals\"]:>6} | {d[\"satisfied\"]}/{d[\"total\"]} | {d[\"vacuous_count\"]} vacuous |')
+" >> user_simulation/docs/CONSTRAINT_HISTORY.md
 ```
 
 A healthy system: effective tests growing, vacuous count zero, occasional failures caught.
