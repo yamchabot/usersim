@@ -177,22 +177,13 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                       row_label="",
                       col_label="",
                       row_fmt=None,
-                      col_fmt=None,
-                      failure_mode=False) -> str:
-        """Render a matrix table.
-
-        failure_mode=True: cells are failure counts.
-          - 0 renders as a subtle ✓ (all passing)
-          - non-zero renders in red (problems)
-        failure_mode=False: cells are active-constraint counts (green scale).
-        """
+                      col_fmt=None) -> str:
         row_fmt = row_fmt or (lambda x: x)
         col_fmt = col_fmt or (lambda x: x)
 
         if not row_keys or not col_keys:
             return ""
 
-        # row totals for sorting
         row_totals = {r: sum(counts.get(r, {}).values()) for r in row_keys}
         sorted_rows = sorted(row_keys, key=lambda r: -row_totals[r])
 
@@ -217,19 +208,13 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             tds = ""
             for c in col_keys:
                 cnt = rc.get(c, 0)
-                if failure_mode:
-                    if cnt == 0:
-                        bg   = "transparent"
-                        cell = '<span class="gm-pass">✓</span>'
-                    else:
-                        alpha = round(0.25 + (cnt / max_cell) * 0.60, 3)
-                        bg   = f"rgba(var(--fail-rgb),{alpha})"
-                        cell = f"<b>{cnt}</b>"
-                else:
-                    alpha = round(0.07 + (cnt / max_cell) * 0.73, 3) if cnt else 0
-                    bg   = f"rgba(var(--accent-rgb),{alpha})" if cnt else "transparent"
-                    cell = f"<b>{cnt}</b>" if cnt else ""
-                tds += f'<td class="gm-cell" style="background:{bg}">{cell}</td>'
+                alpha = round(0.07 + (cnt / max_cell) * 0.73, 3) if cnt else 0
+                bg = f"rgba(var(--accent-rgb),{alpha})" if cnt else "transparent"
+                tds += (
+                    f'<td class="gm-cell" style="background:{bg}">'
+                    f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
+                    f'</td>'
+                )
             rows_html += (
                 f'<tr>'
                 f'<td class="gm-rowhead">{_html_escape(row_fmt(r))}</td>'
@@ -245,59 +230,44 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             f'</table></div>'
         )
 
-    # Matrix data collection
-    #
-    # Variable × Scenario / Variable × Persona:
-    #   Count failing constraints that reference each variable.
-    #   0 = all passing (good), non-zero = problems (needs attention).
-    #   This varies across scenarios whenever constraint outcomes differ,
-    #   so identical rows indicate genuinely uniform coverage — not a bug.
-    #
-    # Persona × Scenario:
-    #   Count failing constraints per (persona, scenario).
-    #   A cell of 0 means the persona passed in that scenario.
-    #   Sorting by total failures puts the most troubled personas at the top.
-    #
-    # Group × Scenario, Persona × Group, Variable × Group:
-    #   Active constraint count (fires or no antecedent), used for the graph tab.
-    gm_var_sc:   dict[str, dict[str, int]] = {}   # variable × scenario  (failures)
-    gm_var_pers: dict[str, dict[str, int]] = {}   # variable × persona   (failures)
-    gm_pers_sc:  dict[str, dict[str, int]] = {}   # persona × scenario   (failures)
-    gm_group_sc: dict[str, dict[str, int]] = {}   # group × scenario     (active count)
-    gm_pers_grp: dict[str, dict[str, int]] = {}   # persona × group      (active count)
-    gm_var_grp:  dict[str, dict[str, int]] = {}   # variable × group     (active count)
+    # Coverage matrices — slices of the multidimensional constraint dataset
+    # (variables × scenarios × personas × groups × constraints).
+    # Each cell is the count of active constraints (antecedent fired, or no antecedent)
+    # that reference both dimensions of that cell.
+    # Vacuous constraints (antecedent_fired=False) are excluded from all counts.
+    gm_var_sc:   dict[str, dict[str, int]] = {}   # variable × scenario
+    gm_var_pers: dict[str, dict[str, int]] = {}   # variable × persona
+    gm_pers_sc:  dict[str, dict[str, int]] = {}   # persona × scenario
+    gm_group_sc: dict[str, dict[str, int]] = {}   # group × scenario
+    gm_pers_grp: dict[str, dict[str, int]] = {}   # persona × group
+    gm_var_grp:  dict[str, dict[str, int]] = {}   # variable × group
 
     for r in all_results:
         persona  = r["person"]
         scenario = r["scenario"]
-
-        # Ensure every (persona, scenario) pair has an entry so passing cells show 0
-        gm_pers_sc.setdefault(persona, {})
-        gm_pers_sc[persona].setdefault(scenario, 0)
-
         for c in r.get("constraints", []):
             if not isinstance(c, dict):
                 continue
             if c.get("antecedent_fired") is False:
                 continue  # skip vacuous
-            expr   = c.get("expr") or ""
-            passed = c.get("passed", True)
-            label  = c.get("label") or ""
-            group  = label.split("/")[0] if "/" in label else label
+            expr  = c.get("expr") or ""
+            label = c.get("label") or ""
+            group = label.split("/")[0] if "/" in label else label
 
-            # Variable × Scenario / Variable × Persona — count failures only
-            if not passed:
-                for v in _extract_vars(expr):
-                    gm_var_sc.setdefault(v, {})
-                    gm_var_sc[v][scenario] = gm_var_sc[v].get(scenario, 0) + 1
+            for v in _extract_vars(expr):
+                gm_var_sc.setdefault(v, {})
+                gm_var_sc[v][scenario] = gm_var_sc[v].get(scenario, 0) + 1
 
-                    gm_var_pers.setdefault(v, {})
-                    gm_var_pers[v][persona] = gm_var_pers[v].get(persona, 0) + 1
+                gm_var_pers.setdefault(v, {})
+                gm_var_pers[v][persona] = gm_var_pers[v].get(persona, 0) + 1
 
-                # Persona × Scenario — count failures
-                gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
+                if group:
+                    gm_var_grp.setdefault(v, {})
+                    gm_var_grp[v][group] = gm_var_grp[v].get(group, 0) + 1
 
-            # Group × Scenario, Persona × Group, Variable × Group — active count
+            gm_pers_sc.setdefault(persona, {})
+            gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
+
             if group:
                 gm_group_sc.setdefault(group, {})
                 gm_group_sc[group][scenario] = gm_group_sc[group].get(scenario, 0) + 1
@@ -305,35 +275,22 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                 gm_pers_grp.setdefault(persona, {})
                 gm_pers_grp[persona][group] = gm_pers_grp[persona].get(group, 0) + 1
 
-                for v in _extract_vars(expr):
-                    gm_var_grp.setdefault(v, {})
-                    gm_var_grp[v][group] = gm_var_grp[v].get(group, 0) + 1
-
     # Exclude totals/sums that dominate and obscure the rest of the matrix
     _MATRIX_EXCLUDE = {"results_total"}
 
-    # Variables that appear in at least one failure (or all variables for var×pers)
     all_vars  = sorted(
         {v for d in (gm_var_sc, gm_var_pers) for v in d
          if v not in _MATRIX_EXCLUDE},
         key=lambda v: -(sum(gm_var_sc.get(v, {}).values()) +
                         sum(gm_var_pers.get(v, {}).values()))
     )
-    # Personas sorted by total failures (most troubled first)
-    persons_by_failures = sorted(
-        persons_ordered,
-        key=lambda p: -sum(gm_pers_sc.get(p, {}).values())
-    )
 
-    tbl_var_sc   = _matrix_table(all_vars,            scenarios,       gm_var_sc,
-                                  row_label="variable", col_label="scenario",
-                                  failure_mode=True)
-    tbl_var_pers = _matrix_table(all_vars,            persons_ordered, gm_var_pers,
-                                  row_label="variable", col_label="persona",
-                                  failure_mode=True)
-    tbl_pers_sc  = _matrix_table(persons_by_failures, scenarios,       gm_pers_sc,
-                                  row_label="persona",  col_label="scenario",
-                                  failure_mode=True)
+    tbl_var_sc   = _matrix_table(all_vars,        scenarios,       gm_var_sc,
+                                  row_label="variable", col_label="scenario")
+    tbl_var_pers = _matrix_table(all_vars,        persons_ordered, gm_var_pers,
+                                  row_label="variable", col_label="persona")
+    tbl_pers_sc  = _matrix_table(persons_ordered, scenarios,       gm_pers_sc,
+                                  row_label="persona",  col_label="scenario")
     all_groups   = sorted(gm_group_sc, key=lambda g: -sum(gm_group_sc[g].values()))
     tbl_group_sc = _matrix_table(all_groups, scenarios, gm_group_sc,
                                   row_label="group", col_label="scenario")
@@ -359,15 +316,15 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   <div class="gm-tab-pane" id="gm-pane-matrices">
     <div class="gm-grid">
       <div class="gm-panel">
-        <div class="gm-panel-label">Variable × Scenario <span class="gm-sublabel">(failing constraints)</span></div>
+        <div class="gm-panel-label">Variable × Scenario</div>
         {tbl_var_sc}
       </div>
       <div class="gm-panel">
-        <div class="gm-panel-label">Variable × Persona <span class="gm-sublabel">(failing constraints)</span></div>
+        <div class="gm-panel-label">Variable × Persona</div>
         {tbl_var_pers}
       </div>
       <div class="gm-panel">
-        <div class="gm-panel-label">Persona × Scenario <span class="gm-sublabel">(failing constraints)</span></div>
+        <div class="gm-panel-label">Persona × Scenario</div>
         {tbl_pers_sc}
       </div>
       <div class="gm-panel">
