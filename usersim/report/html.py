@@ -200,7 +200,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         header = (
             f'<tr><th class="gm-rowhead">{row_label}</th>'
             f'{th_cols}'
-            f'<th class="gm-total">Σ</th></tr>'
+            f'</tr>'
         )
 
         rows_html = ""
@@ -217,13 +217,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                     f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
                     f'</td>'
                 )
-            t_alpha = round(0.1 + (total_r / (max_cell * len(col_keys))) * 0.6, 3)
             rows_html += (
                 f'<tr>'
                 f'<td class="gm-rowhead">{_html_escape(row_fmt(r))}</td>'
                 f'{tds}'
-                f'<td class="gm-total" style="background:rgba(var(--accent-rgb),{t_alpha})">'
-                f'<b>{total_r}</b></td>'
                 f'</tr>\n'
             )
 
@@ -352,13 +349,12 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         header = (
             f'<tr><th class="vim-var">variable</th>'
             f'{th_cells}'
-            f'<th class="vim-total">total</th></tr>'
+            f'</tr>'
         )
 
         rows = ""
         for v in vars_sorted:
             sc = var_sc[v]
-            total_v = var_totals[v]
             td_cells = ""
             for s in scenarios:
                 cnt = sc.get(s, 0)
@@ -369,13 +365,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                     f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
                     f'</td>'
                 )
-            t_alpha = round(0.1 + (total_v / (max_cell * len(scenarios))) * 0.7, 3)
             rows += (
                 f'<tr>'
                 f'<td class="vim-var">{_html_escape(v)}</td>'
                 f'{td_cells}'
-                f'<td class="vim-total" style="background:rgba(var(--accent-rgb),{t_alpha})">'
-                f'<b>{total_v}</b></td>'
                 f'</tr>\n'
             )
 
