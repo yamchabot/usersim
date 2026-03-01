@@ -16,25 +16,25 @@ pytest
 
 71 tests. Takes ~25 seconds (integration tests run real pipelines).
 
-## Run by scenario tag
+## Run by path tag
 
-Scenarios are tagged `smoke`, `continuous`, or `regression`. Use `--tags` to run a subset:
+Paths are tagged `smoke`, `continuous`, or `regression`. Use `--tags` to run a subset:
 
 ```bash
-# Fast sanity check — only smoke scenarios
+# Fast sanity check — only smoke paths
 usersim run --tags smoke
 
-# Every agent invocation — 5 scenarios, skips the slow regression suite
+# Every agent invocation — 5 paths, skips the slow regression suite
 usersim run --tags continuous
 
 # Release gate — full suite including violation_health and broken_example
 usersim run --tags regression
 
-# Multiple tags — union (any match runs the scenario)
+# Multiple tags — union (any match runs the path)
 usersim run --tags smoke regression
 ```
 
-Untagged scenarios always run (no filtering applied to them).
+Untagged paths always run (no filtering applied to them).
 
 ## Test structure
 
@@ -60,18 +60,18 @@ Runs `usersim run` end-to-end against each bundled project and the dogfood confi
 Verifies the full pipeline: instrumentation → perceptions → judgement → report.
 
 **TestLocalNotesExample** — `examples/local-notes/`
-- 5 personas × 7 scenarios
-- Checks: clean exit, all checks passed, schema, all scenarios/personas present,
+- 5 personas × 7 paths
+- Checks: clean exit, all checks passed, schema, all paths/personas present,
   every result satisfied, every result has constraints, report written and valid
 
 **TestDataProcessorExample** — `examples/data-processor/`
-- 3 personas × 3 scenarios
+- 3 personas × 3 paths
 - Same checks as above
 
 **TestDogfood** — `dogfood/` (usersim testing itself)
-- 15 personas × 6 scenarios = 90 checks
+- 15 personas × 6 paths = 90 checks
 - Additional checks:
-  - Zero vacuous constraints in `full_integration` scenario
+  - Zero vacuous constraints in `full_integration` path
   - Effective test count ≥ 50,000 (regression guard on constraint coverage)
 
 ## Run a specific test file or class

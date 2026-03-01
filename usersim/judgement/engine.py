@@ -195,7 +195,7 @@ def _evaluate(perceptions_doc: dict, user_files: list) -> dict:
     from usersim.schema import RESULTS_SCHEMA
 
     facts       = perceptions_doc["facts"]
-    scenario    = perceptions_doc.get("scenario", "unknown")
+    path    = perceptions_doc.get("path", "unknown")
     person_name = perceptions_doc.get("person", None)
     if person_name == "all":
         person_name = None
@@ -205,12 +205,12 @@ def _evaluate(perceptions_doc: dict, user_files: list) -> dict:
     person_results = []
     for person in persons:
         result = evaluate_person(person, facts)
-        result["scenario"] = scenario
+        result["path"] = path
         person_results.append(result)
 
     return {
         "schema":   RESULTS_SCHEMA,
-        "scenario": scenario,
+        "path": path,
         "results":  person_results,
         "summary": {
             "total":     len(person_results),
@@ -253,7 +253,7 @@ def run_matrix(
 ) -> dict:
     """
     Run judgement across all perceptions JSON files in a directory.
-    Returns a matrix of person × scenario results.
+    Returns a matrix of person × path results.
     """
     perceptions_dir = Path(perceptions_dir)
     files = sorted(perceptions_dir.glob("*.json"))
@@ -263,11 +263,11 @@ def run_matrix(
         with open(pf) as f:
             doc = json.load(f)
         facts    = doc.get("facts", {})
-        scenario = doc.get("scenario", pf.stem)
+        path = doc.get("path", pf.stem)
         persons  = _load_persons(user_files)
         for person in persons:
             r = evaluate_person(person, facts)
-            r["scenario"] = scenario
+            r["path"] = path
             all_results.append(r)
 
     satisfied = sum(1 for r in all_results if r["satisfied"])

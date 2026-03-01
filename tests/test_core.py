@@ -237,7 +237,7 @@ class Alice(Person):
         perc_file = tmp_path / "perceptions.json"
         perc_file.write_text(json.dumps({
             "schema":   "usersim.perceptions.v1",
-            "scenario": "homepage",
+            "path": "homepage",
             "person":   "alice",
             "facts":    {"loads_fast": True, "is_large": False, "has_clusters": False},
         }))

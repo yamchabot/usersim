@@ -76,7 +76,7 @@ _INSTRUMENTATION_PY = '''\
 instrumentation.py — collect metrics from your application.
 
 Run by usersim via the command in usersim.yaml.  Write JSON to stdout.
-USERSIM_SCENARIO env var is set to the current scenario name.
+USERSIM_PATH env var is set to the current path name.
 
 Replace the stub below with real measurements from your app.
 """
@@ -84,7 +84,7 @@ import json
 import os
 import sys
 
-scenario = os.environ.get("USERSIM_SCENARIO", "default")
+path = os.environ.get("USERSIM_PATH", "default")
 
 # TODO: replace with real measurements
 metrics = {
@@ -95,7 +95,7 @@ metrics = {
 
 json.dump({
     "schema":   "usersim.metrics.v1",
-    "scenario": scenario,
+    "path": path,
     "metrics":  metrics,
 }, sys.stdout)
 '''
@@ -113,7 +113,7 @@ version: 1
 
 # Shell command to collect metrics from your app (any language).
 # Reads nothing; writes metrics JSON to stdout.
-# USERSIM_SCENARIO env var is set to the current scenario name.
+# USERSIM_PATH env var is set to the current path name.
 instrumentation: "python3 instrumentation.py"
 
 # Shell command (or Python file with compute()) for perceptions.
@@ -126,8 +126,8 @@ users:
   - usersim/users/*.py
 
 # Scenarios to run.  Each triggers one instrumentation + perceptions call.
-# Use USERSIM_SCENARIO in your instrumentation to vary the conditions.
-scenarios:
+# Use USERSIM_PATH in your instrumentation to vary the conditions.
+paths:
   - default
 
 # Optional: where to save output.  Remove to write to stdout only.
@@ -185,7 +185,7 @@ Layout:
 Next steps:
 
   1. Edit  instrumentation.py  — replace the stub with real measurements.
-     Write metrics JSON to stdout.  USERSIM_SCENARIO env var is set.
+     Write metrics JSON to stdout.  USERSIM_PATH env var is set.
 
   2. Edit  usersim/perceptions.py  — return numeric domain observations.
      Different users will apply their own thresholds in step 3.

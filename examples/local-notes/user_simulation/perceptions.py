@@ -2,14 +2,14 @@
 perceptions.py — Local Notes perception layer
 
 Transforms raw instrumentation metrics into domain-meaningful values.
-Called by usersim for each scenario × person combination.
+Called by usersim for each path × person combination.
 
 Rule: no threshold comparisons here — those belong in Z3 user constraints.
 Perceptions return numbers. Judgements return booleans.
 """
 
 
-def compute(metrics, scenario=None, person=None):
+def compute(metrics, path=None, person=None):
     def get(key, default=0.0):
         v = metrics.get(key, default)
         return float(v) if v is not None else default
@@ -79,7 +79,7 @@ def compute(metrics, scenario=None, person=None):
 
     # Fraction of notes that survived a reload (1.0 = perfect, 0.0 = total loss).
     # Requires both before and after counts — neither alone tells you the rate.
-    # Returns 1.0 when this scenario didn't measure persistence (not applicable).
+    # Returns 1.0 when this path didn't measure persistence (not applicable).
     _before_key_present = "notes_before_reload" in metrics
     _after_key_present  = "notes_after_reload"  in metrics
     if _before_key_present and _after_key_present:
@@ -87,20 +87,20 @@ def compute(metrics, scenario=None, person=None):
         notes_after  = get("notes_after_reload")
         data_integrity_rate = notes_after / notes_before
     else:
-        data_integrity_rate = 1.0  # not measured this scenario — assume fine
+        data_integrity_rate = 1.0  # not measured this path — assume fine
 
     # Ratio of storage keys to notebooks (1.0 = perfect isolation).
     # notebook_key_count and notebook_count are different things:
     # one is the number of storage keys, the other is the number of UI notebooks.
     # They should always be equal; a ratio below 1.0 means keys are missing,
     # above 1.0 means there is orphaned data.
-    # Returns 1.0 when isolation wasn't measured this scenario.
+    # Returns 1.0 when isolation wasn't measured this path.
     if "notebook_key_count" in metrics and "notebook_count" in metrics:
         nb_count = get("notebook_count") or 1.0
         nb_keys  = get("notebook_key_count")
         notebook_isolation_ratio = nb_keys / nb_count
     else:
-        notebook_isolation_ratio = 1.0  # not measured this scenario — assume fine
+        notebook_isolation_ratio = 1.0  # not measured this path — assume fine
 
     # Sum of all signals that indicate data is leaving or being controlled externally.
     # Used by privacy-conscious users to assess overall trust posture at a glance.

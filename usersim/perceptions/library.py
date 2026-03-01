@@ -205,7 +205,7 @@ def run_perceptions(compute_fn) -> None:
     """
     Run `compute_fn` as a stdin → stdout perceptions script.
 
-    Reads metrics JSON from stdin, calls compute_fn(metrics, scenario=...),
+    Reads metrics JSON from stdin, calls compute_fn(metrics, path=...),
     and writes the perceptions JSON document to stdout.
 
     Call this from your perceptions.py __main__ block so the file works
@@ -230,15 +230,15 @@ def run_perceptions(compute_fn) -> None:
 
     doc      = json.load(sys.stdin)
     metrics  = doc.get("metrics", {})
-    scenario = doc.get("scenario", "default")
+    path = doc.get("path", "default")
 
-    result = compute_fn(metrics, scenario=scenario)
+    result = compute_fn(metrics, path=path)
 
     # If compute_fn returned just the facts dict, wrap it in the full schema
     if "facts" not in result:
         result = {
             "schema":   "usersim.perceptions.v1",
-            "scenario": scenario,
+            "path": path,
             "person":   "all",
             "facts":    result,
         }

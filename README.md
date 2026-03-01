@@ -6,10 +6,10 @@ Traditional test suites scale linearly: one test, one assertion, one pass/fail.
 When you need 10,000 tests, you run your application 10,000 times.
 usersim breaks that coupling.
 
-You run your application a small number of times — once per scenario.
+You run your application a small number of times — once per path.
 Each run collects raw measurements. Then Z3, a theorem prover from Microsoft
 Research, evaluates thousands of logical constraints against those measurements
-simultaneously. One scenario run. Thousands of checks. For free.
+simultaneously. One path run. Thousands of checks. For free.
 
 ---
 
@@ -68,9 +68,9 @@ Coverage grows without bound.
 └─────────────────────────────────────────────────────────────┘
 ```
 
-One scenario run produces one set of facts. Z3 evaluates every constraint
+One path run produces one set of facts. Z3 evaluates every constraint
 in every persona against those facts simultaneously. Add more personas and
-more constraints — the scenario run cost doesn't change.
+more constraints — the path run cost doesn't change.
 
 ---
 
@@ -102,7 +102,7 @@ See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough.
 version: 1
 
 # Shell command that runs your app and writes metrics JSON to stdout.
-# USERSIM_SCENARIO is set to the current scenario name.
+# USERSIM_PATH is set to the current path name.
 instrumentation: "python3 instrumentation.py"
 
 # Python file (or shell command) that translates metrics to perception vars.
@@ -112,8 +112,8 @@ perceptions: "python3 perceptions.py"
 users:
   - users/*.py
 
-# Each scenario triggers one instrumentation run.
-scenarios:
+# Each path triggers one instrumentation run.
+paths:
   - default
   - peak_load
   - degraded
@@ -132,7 +132,7 @@ Run your app. Write numbers to stdout. One JSON object:
 ```json
 {
   "schema":   "usersim.metrics.v1",
-  "scenario": "peak_load",
+  "path": "peak_load",
   "metrics":  {
     "response_ms":   480,
     "error_count":   12,
@@ -143,10 +143,10 @@ Run your app. Write numbers to stdout. One JSON object:
 }
 ```
 
-Use `USERSIM_SCENARIO` to vary what you measure:
+Use `USERSIM_PATH` to vary what you measure:
 
 ```python
-scenario = os.environ.get("USERSIM_SCENARIO", "default")
+path = os.environ.get("USERSIM_PATH", "default")
 ```
 
 **Rules:**
@@ -210,7 +210,7 @@ class PowerUser(Person):
             # Structural invariant: can't succeed with zero results
             Not(And(P.exit_code == 0, P.result_count == 0)),
 
-            # Matrix invariant: total = persons × scenarios
+            # Matrix invariant: total = persons × paths
             P.results_total == P.person_count * P.scenario_count,
 
             # Timing budget scales with work done
@@ -219,7 +219,7 @@ class PowerUser(Person):
 ```
 
 **The goal:** push as much logic as possible into constraints. Every constraint
-you add is free coverage — zero additional scenario runs. Z3 evaluates all of them
+you add is free coverage — zero additional path runs. Z3 evaluates all of them
 in milliseconds regardless of how many you define.
 
 ### What Z3 can express
@@ -256,7 +256,7 @@ If you can write it as a Z3 expression, it belongs in Z3.
 ```bash
 usersim init [DIR]               # scaffold a new project
 usersim run                      # run the full pipeline (reads usersim.yaml)
-usersim run --scenario peak_load # run one specific scenario
+usersim run --path peak_load # run one specific path
 usersim run --out results.json   # save results to file
 usersim run --quiet              # suppress human summary on stderr
 usersim run --verbose            # print stage info to stderr
@@ -271,7 +271,7 @@ usersim run | usersim report                # pipe results into report
 usersim report --results results.json       # from a file
 ```
 
-Exit code is 0 when all personas are satisfied across all scenarios, 1 otherwise.
+Exit code is 0 when all personas are satisfied across all paths, 1 otherwise.
 
 ---
 

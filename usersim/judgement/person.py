@@ -50,7 +50,7 @@ class Person:
     Subclass this and implement `constraints(self, P)`.
     `P` is a FactNamespace — access facts as attributes (P.fact_name).
     Return a list of Z3 expressions; if all are satisfiable the user is
-    considered "satisfied" for that scenario.
+    considered "satisfied" for that path.
     """
 
     name:        str = ""

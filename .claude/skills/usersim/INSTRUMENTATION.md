@@ -4,7 +4,7 @@ Read this when implementing Layer 1 (the witness) for a project.
 This is a sub-skill of `.claude/skills/usersim/SKILL.md` — read that first.
 
 > **Web app?** Read `.claude/skills/usersim/web.md` instead of this file.
-> It provides a ready-made scenario runner and page automation API.
+> It provides a ready-made path runner and page automation API.
 
 ---
 
@@ -25,12 +25,12 @@ If it requires reasoning about what the number means, it belongs in perceptions 
 
 ## Output format
 
-Each scenario run must print exactly one JSON object to stdout:
+Each path run must print exactly one JSON object to stdout:
 
 ```json
 {
   "schema":   "usersim.metrics.v1",
-  "scenario": "normal_run",
+  "path": "normal_run",
   "metrics":  {
     "exit_code":    0,
     "wall_ms":      4230,
@@ -50,13 +50,13 @@ No other output on stdout. Errors and diagnostics go to stderr.
 # instrumentation.py
 import sys, os, subprocess, json, time, tempfile, shutil
 
-SCENARIO = os.environ.get("USERSIM_SCENARIO", "normal_run")
+SCENARIO = os.environ.get("USERSIM_PATH", "normal_run")
 
 
-def emit(scenario, metrics):
+def emit(path, metrics):
     print(json.dumps({
         "schema":   "usersim.metrics.v1",
-        "scenario": scenario,
+        "path": path,
         "metrics":  metrics,
     }))
 
@@ -146,25 +146,25 @@ SCENARIOS = {
 if __name__ == "__main__":
     fn = SCENARIOS.get(SCENARIO)
     if not fn:
-        print(f"Unknown scenario: {SCENARIO}", file=sys.stderr)
+        print(f"Unknown path: {SCENARIO}", file=sys.stderr)
         sys.exit(1)
     emit(SCENARIO, fn())
 ```
 
 ---
 
-## Scenario design
+## Path design
 
-### What makes a good scenario
+### What makes a good path
 
-- **Exercises distinct code paths** — scenarios that produce identical metrics are redundant
+- **Exercises distinct code paths** — paths that produce identical metrics are redundant
 - **Zero or near-zero vacuous antecedents** — every perception used by a constraint is populated
-- **Isolated** — scenarios don't share state; each starts from a clean environment
+- **Isolated** — paths don't share state; each starts from a clean environment
 - **Fast** — instrumentation should complete in seconds, not minutes
 
-### Required scenarios for every project
+### Required paths for every project
 
-| Scenario | Purpose |
+| Path | Purpose |
 |----------|---------|
 | A normal success case | Proves the happy path works end-to-end |
 | An error/failure case | Proves the system fails cleanly and non-zero |
@@ -172,12 +172,12 @@ if __name__ == "__main__":
 
 ### `full_integration` is mandatory
 
-This is the most important scenario. It is the only way to guarantee no constraint ever
+This is the most important path. It is the only way to guarantee no constraint ever
 fires vacuously (antecedent never triggered = constraint never tested = false confidence).
 
 `full_integration` should:
 - Run every subsystem the perceptions layer measures
-- Exercise both success and failure paths within the same scenario
+- Exercise both success and failure paths within the same path
 - Populate every perception variable that any persona constraint references
 
 A `full_integration` that leaves 20 perceptions at their default value is not doing its job.
@@ -187,7 +187,7 @@ Check after writing it:
 python3 -c "
 import json
 r = json.load(open('results.json'))
-fi = [x for x in r['results'] if x['scenario'] == 'full_integration']
+fi = [x for x in r['results'] if x['path'] == 'full_integration']
 vac = [c['label'] for x in fi for c in x.get('constraints',[])
        if c.get('antecedent_fired') is False]
 print(f'{len(vac)} vacuous in full_integration')
@@ -195,22 +195,22 @@ for l in vac[:10]: print(f'  {l}')
 "
 ```
 
-### Signs of a bad scenario
+### Signs of a bad path
 
-- Two scenarios that produce identical perceptions → merge them
-- Many `antecedent_fired: false` → scenario doesn't exercise the system
-- Scenario depends on previous scenario's output → make it independent
+- Two paths that produce identical perceptions → merge them
+- Many `antecedent_fired: false` → path doesn't exercise the system
+- Path depends on previous path's output → make it independent
 
 ---
 
-## Testing scenarios individually
+## Testing paths individually
 
-Always test each scenario in isolation before running the full suite:
+Always test each path in isolation before running the full suite:
 
 ```bash
-USERSIM_SCENARIO=normal_run      python3 instrumentation.py
-USERSIM_SCENARIO=bad_config      python3 instrumentation.py
-USERSIM_SCENARIO=full_integration python3 instrumentation.py
+USERSIM_PATH=normal_run      python3 instrumentation.py
+USERSIM_PATH=bad_config      python3 instrumentation.py
+USERSIM_PATH=full_integration python3 instrumentation.py
 ```
 
 Each should:
@@ -218,7 +218,7 @@ Each should:
 2. Print nothing else to stdout (errors → stderr)
 3. Exit 0
 
-If a scenario prints invalid JSON or errors on stdout, the perceptions layer will receive
+If a path prints invalid JSON or errors on stdout, the perceptions layer will receive
 bad data silently. Fix it before moving to perceptions.
 
 ---
@@ -233,7 +233,7 @@ result = subprocess.run([...], capture_output=True, text=True)
 wall_ms = int((time.time() - t0) * 1000)
 ```
 
-Include the wall_ms in every scenario that runs the main pipeline. The timing constraints
+Include the wall_ms in every path that runs the main pipeline. The timing constraints
 in Z3 (`wall_ms <= person_count * scenario_count * 3000`) only work if the metric exists.
 
 ---

@@ -19,7 +19,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from processor import sort_records, search_records, summarise
 
-SCENARIO = os.environ.get("USERSIM_SCENARIO", "small")
+SCENARIO = os.environ.get("USERSIM_PATH", "small")
 random.seed(42)
 
 CATEGORIES = ["alpha", "beta", "gamma", "delta"]
@@ -92,7 +92,7 @@ error_count  = sum(1 for r in records if "score" not in r)
 summary_count = summary.get("count", 0)
 
 print(
-    f"[instrumentation] scenario={SCENARIO} n={N:,} errors={error_count} "
+    f"[instrumentation] path={SCENARIO} n={N:,} errors={error_count} "
     f"sort={sort_ms}ms search={search_ms}ms summary={summary_ms}ms",
     file=sys.stderr,
 )
@@ -100,7 +100,7 @@ print(
 json.dump(
     {
         "schema":   "usersim.metrics.v1",
-        "scenario": SCENARIO,
+        "path": SCENARIO,
         "metrics": {
             "record_count":    N,
             "sort_ms":         sort_ms,

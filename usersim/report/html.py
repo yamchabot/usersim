@@ -3,11 +3,11 @@ HTML report generator.
 
 Produces a self-contained single-file report from results.json,
 styled as per-person cards with avatar, goal, constraints, and
-a dot-grid of scenario pass/fail results.
+a dot-grid of path pass/fail results.
 
-Clicking a scenario ball updates the constraints panel to show
-the constraint state for that specific scenario (including the
-scenario name and optional description).  Clicking the same ball
+Clicking a path ball updates the constraints panel to show
+the constraint state for that specific path (including the
+path name and optional description).  Clicking the same ball
 again (or pressing Escape) returns to the aggregate view.
 """
 from __future__ import annotations
@@ -57,8 +57,8 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             seen.add(p)
             persons_ordered.append(p)
 
-    scenarios = sorted({r["scenario"] for r in all_results})
-    result_map = {(r["person"], r["scenario"]): r for r in all_results}
+    paths = sorted({r["path"] for r in all_results})
+    result_map = {(r["person"], r["path"]): r for r in all_results}
 
     total     = summary.get("total", 0)
     satisfied = summary.get("satisfied", 0)
@@ -92,7 +92,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     never_exercised: dict[str, list[str]] = {}
 
     for person_name in persons_ordered:
-        person_results = [result_map.get((person_name, s)) for s in scenarios]
+        person_results = [result_map.get((person_name, s)) for s in paths]
 
         # Determine constraint count from the first available result
         n_constraints = 0
@@ -142,8 +142,8 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         gaps_html = f"""
 <div class="gaps-section">
   <div class="gaps-title">⚠️ Never-exercised constraints</div>
-  <p class="gaps-desc">These conditional constraints had their antecedent false in every scenario.
-  Add scenarios where the condition is true to properly test them.</p>
+  <p class="gaps-desc">These conditional constraints had their antecedent false in every path.
+  Add paths where the condition is true to properly test them.</p>
   <table class="gaps-table">
     <thead><tr><th>Persona</th><th>Constraint</th></tr></thead>
     <tbody>{gap_rows}</tbody>
@@ -231,20 +231,20 @@ def generate_report(results: dict, output_path: str | Path) -> None:
         )
 
     # Coverage matrices — slices of the multidimensional constraint dataset
-    # (variables × scenarios × personas × groups × constraints).
+    # (variables × paths × personas × groups × constraints).
     # Each cell is the count of active constraints (antecedent fired, or no antecedent)
     # that reference both dimensions of that cell.
     # Vacuous constraints (antecedent_fired=False) are excluded from all counts.
-    gm_var_sc:   dict[str, dict[str, int]] = {}   # variable × scenario
+    gm_var_sc:   dict[str, dict[str, int]] = {}   # variable × path
     gm_var_pers: dict[str, dict[str, int]] = {}   # variable × persona
-    gm_pers_sc:  dict[str, dict[str, int]] = {}   # persona × scenario
-    gm_group_sc: dict[str, dict[str, int]] = {}   # group × scenario
+    gm_pers_sc:  dict[str, dict[str, int]] = {}   # persona × path
+    gm_group_sc: dict[str, dict[str, int]] = {}   # group × path
     gm_pers_grp: dict[str, dict[str, int]] = {}   # persona × group
     gm_var_grp:  dict[str, dict[str, int]] = {}   # variable × group
 
     for r in all_results:
         persona  = r["person"]
-        scenario = r["scenario"]
+        path = r["path"]
         for c in r.get("constraints", []):
             if not isinstance(c, dict):
                 continue
@@ -256,7 +256,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
 
             for v in _extract_vars(expr):
                 gm_var_sc.setdefault(v, {})
-                gm_var_sc[v][scenario] = gm_var_sc[v].get(scenario, 0) + 1
+                gm_var_sc[v][path] = gm_var_sc[v].get(path, 0) + 1
 
                 gm_var_pers.setdefault(v, {})
                 gm_var_pers[v][persona] = gm_var_pers[v].get(persona, 0) + 1
@@ -266,11 +266,11 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                     gm_var_grp[v][group] = gm_var_grp[v].get(group, 0) + 1
 
             gm_pers_sc.setdefault(persona, {})
-            gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
+            gm_pers_sc[persona][path] = gm_pers_sc[persona].get(path, 0) + 1
 
             if group:
                 gm_group_sc.setdefault(group, {})
-                gm_group_sc[group][scenario] = gm_group_sc[group].get(scenario, 0) + 1
+                gm_group_sc[group][path] = gm_group_sc[group].get(path, 0) + 1
 
                 gm_pers_grp.setdefault(persona, {})
                 gm_pers_grp[persona][group] = gm_pers_grp[persona].get(group, 0) + 1
@@ -285,15 +285,15 @@ def generate_report(results: dict, output_path: str | Path) -> None:
                         sum(gm_var_pers.get(v, {}).values()))
     )
 
-    tbl_var_sc   = _matrix_table(all_vars,        scenarios,       gm_var_sc,
-                                  row_label="variable", col_label="scenario")
+    tbl_var_sc   = _matrix_table(all_vars,        paths,       gm_var_sc,
+                                  row_label="variable", col_label="path")
     tbl_var_pers = _matrix_table(all_vars,        persons_ordered, gm_var_pers,
                                   row_label="variable", col_label="persona")
-    tbl_pers_sc  = _matrix_table(persons_ordered, scenarios,       gm_pers_sc,
-                                  row_label="persona",  col_label="scenario")
+    tbl_pers_sc  = _matrix_table(persons_ordered, paths,       gm_pers_sc,
+                                  row_label="persona",  col_label="path")
     all_groups   = sorted(gm_group_sc, key=lambda g: -sum(gm_group_sc[g].values()))
-    tbl_group_sc = _matrix_table(all_groups, scenarios, gm_group_sc,
-                                  row_label="group", col_label="scenario")
+    tbl_group_sc = _matrix_table(all_groups, paths, gm_group_sc,
+                                  row_label="group", col_label="path")
 
     # Serialize graph data for the force-directed graph tab
     import json as _json
@@ -369,17 +369,17 @@ window.GRAPH_DATA = {graph_data_js};
     # ── Variable impact matrix (per-persona) ──────────────────────────────────
     def _build_persona_matrix(person_name: str) -> str:
         """
-        Build a variable × scenario impact matrix for one persona.
+        Build a variable × path impact matrix for one persona.
         Rows = variables used in this persona's constraints (sorted by total
-               antecedent-fired count across all scenarios).
-        Columns = scenarios.
+               antecedent-fired count across all paths).
+        Columns = paths.
         Cell = number of constraints referencing that variable whose antecedent
-               actually FIRED in that scenario (not vacuous).
+               actually FIRED in that path (not vacuous).
                Constraints without an antecedent (plain assertions) always count.
         """
-        # var → {scenario → fired_count}
+        # var → {path → fired_count}
         var_sc: dict[str, dict[str, int]] = {}
-        for s in scenarios:
+        for s in paths:
             r = result_map.get((person_name, s))
             if not r:
                 continue
@@ -410,7 +410,7 @@ window.GRAPH_DATA = {graph_data_js};
         ) or 1
 
         th_cells = "".join(
-            f'<th class="vim-head">{s.replace("_", "<br>")}</th>' for s in scenarios
+            f'<th class="vim-head">{s.replace("_", "<br>")}</th>' for s in paths
         )
         header = (
             f'<tr><th class="vim-var">variable</th>'
@@ -422,7 +422,7 @@ window.GRAPH_DATA = {graph_data_js};
         for v in vars_sorted:
             sc = var_sc[v]
             td_cells = ""
-            for s in scenarios:
+            for s in paths:
                 cnt = sc.get(s, 0)
                 alpha = round(0.08 + (cnt / max_cell) * 0.72, 3) if cnt else 0
                 bg = f"rgba(var(--accent-rgb),{alpha})" if cnt else "transparent"
@@ -439,7 +439,7 @@ window.GRAPH_DATA = {graph_data_js};
             )
 
         return f"""<div class="vim-wrap">
-  <div class="vim-label">📊 Variable impact — active constraints per scenario (excludes vacuous antecedents)</div>
+  <div class="vim-label">📊 Variable impact — active constraints per path (excludes vacuous antecedents)</div>
   <div class="vim-scroll">
     <table class="vim-table">
       <thead>{header}</thead>
@@ -451,9 +451,9 @@ window.GRAPH_DATA = {graph_data_js};
     # ── Per-person cards ───────────────────────────────────────────────────────
     cards_html = ""
     for pi, person_name in enumerate(persons_ordered):
-        person_results = [result_map.get((person_name, s)) for s in scenarios]
+        person_results = [result_map.get((person_name, s)) for s in paths]
         p_pass = sum(1 for r in person_results if r and r["satisfied"])
-        p_fail = len(scenarios) - p_pass
+        p_fail = len(paths) - p_pass
         all_ok = p_fail == 0
 
         first = next((r for r in person_results if r), {})
@@ -461,7 +461,7 @@ window.GRAPH_DATA = {graph_data_js};
         goal    = first.get("goal",    "")
         pronoun = first.get("pronoun", "they")
 
-        # Aggregate constraint counts across ALL scenarios (for default/reset view)
+        # Aggregate constraint counts across ALL paths (for default/reset view)
         n_scenarios      = len([r for r in person_results if r])
         constraint_pass:  dict[str, int]        = {}
         constraint_fired: dict[str, int | None] = {}
@@ -528,10 +528,10 @@ window.GRAPH_DATA = {graph_data_js};
             _constraint_html(lbl) for lbl in constraint_labels
         )
 
-        # Dot grid — embed per-scenario constraint JSON on each ball
+        # Dot grid — embed per-path constraint JSON on each ball
         dots = ""
-        for si, scenario in enumerate(scenarios):
-            r = result_map.get((person_name, scenario))
+        for si, path in enumerate(paths):
+            r = result_map.get((person_name, path))
             if r:
                 dot_cls = "pass" if r["satisfied"] else "fail"
                 viols   = r.get("violations", [])
@@ -545,14 +545,14 @@ window.GRAPH_DATA = {graph_data_js};
                 sc_json    = _html_attr(json.dumps(sc_constraints))
                 viols_attr = _html_attr("|".join(viols))
                 dots += (
-                    f'<div class="scenario-row {dot_cls}" '
-                    f'data-person="{pi}" data-scenario="{si}" '
-                    f'data-scenario-name="{_html_attr(scenario)}" '
+                    f'<div class="path-row {dot_cls}" '
+                    f'data-person="{pi}" data-path="{si}" '
+                    f'data-path-name="{_html_attr(path)}" '
                     f'data-description="{_html_attr(desc)}" '
                     f'data-violations="{viols_attr}" '
                     f'data-constraints="{sc_json}">'
                     f'<div class="ball {dot_cls}"></div>'
-                    f'<span class="sc-name">{scenario}</span>'
+                    f'<span class="sc-name">{path}</span>'
                     f'</div>\n'
                 )
 
@@ -566,13 +566,13 @@ window.GRAPH_DATA = {graph_data_js};
     <div class="person-name">{person_name}</div>
     <div class="person-role">{role}</div>
     <div class="pronouns">{pronoun}</div>
-    <div class="pass-badge {badge_cls}">{p_pass}/{len(scenarios)} scenarios</div>
+    <div class="pass-badge {badge_cls}">{p_pass}/{len(paths)} paths</div>
   </div>
 
   <div class="constraints-panel" id="cp-{pi}">
     <div class="panel-header">
       <div class="goal-text" id="cp-{pi}-goal">{goal}</div>
-      <div class="scenario-label" id="cp-{pi}-scenario-label"></div>
+      <div class="path-label" id="cp-{pi}-path-label"></div>
     </div>
     <div class="vim-primary" id="cp-{pi}-matrix">
       {persona_matrix_html}
@@ -596,10 +596,10 @@ window.GRAPH_DATA = {graph_data_js};
       <div class="grid-score">
         <span class="n-pass">{p_pass}</span>
         <span style="color:var(--muted)"> / </span>
-        <span class="n-fail">{len(scenarios)}</span>
+        <span class="n-fail">{len(paths)}</span>
       </div>
     </div>
-    <div class="scenario-list" id="balls-{pi}">
+    <div class="path-list" id="balls-{pi}">
 {dots}    </div>
   </div>
 </div>
@@ -608,7 +608,7 @@ window.GRAPH_DATA = {graph_data_js};
     # Build JS map of aggregate state per card (for reset on deselect)
     agg_map_entries = []
     for pi, person_name in enumerate(persons_ordered):
-        person_results_2 = [result_map.get((person_name, s)) for s in scenarios]
+        person_results_2 = [result_map.get((person_name, s)) for s in paths]
         n_sc2 = len([r for r in person_results_2 if r])
         cp2: dict[str, int] = {}
         cf2: dict[str, int | None] = {}
@@ -753,7 +753,7 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .summary strong {{ color: var(--text); }}
 .summary .s-pass {{ color: var(--pass); font-weight: 600; }}
 .summary .s-fail {{ color: var(--fail); font-weight: 600; }}
-.summary .s-scenarios {{ color: var(--muted); }}
+.summary .s-paths {{ color: var(--muted); }}
 .summary .s-people    {{ color: var(--muted); }}
 .summary .s-effective {{
   color: var(--blue); font-weight: 700; font-size: 13px;
@@ -799,33 +799,33 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   min-width: 0;
   transition: background .15s;
 }}
-.constraints-panel.scenario-active {{
+.constraints-panel.path-active {{
   background: rgba(var(--accent-rgb),.04);
 }}
 .panel-header {{ display: flex; flex-direction: column; gap: 6px; }}
 .goal-text {{ font-size: 12px; color: var(--muted); line-height: 1.5; }}
 
-/* scenario label strip (shown when a ball is selected) */
-.scenario-label {{
+/* path label strip (shown when a ball is selected) */
+.path-label {{
   display: none;
   align-items: center; gap: 6px;
   font-size: 11px; font-weight: 600; color: var(--blue);
   padding: 5px 0 3px;
   border-top: 1px solid var(--border);
 }}
-.scenario-label.visible {{ display: flex; }}
-.scenario-label .sl-name  {{ flex: 1; }}
-.scenario-label .sl-badge {{
+.path-label.visible {{ display: flex; }}
+.path-label .sl-name  {{ flex: 1; }}
+.path-label .sl-badge {{
   font-size: 10px; font-weight: 600;
   padding: 1px 6px; border-radius: 8px;
 }}
-.scenario-label .sl-badge.pass {{ background: rgba(var(--pass-rgb),.2);  color: var(--pass); }}
-.scenario-label .sl-badge.fail {{ background: rgba(var(--fail-rgb),.15); color: var(--fail); }}
-.scenario-label .sl-close {{
+.path-label .sl-badge.pass {{ background: rgba(var(--pass-rgb),.2);  color: var(--pass); }}
+.path-label .sl-badge.fail {{ background: rgba(var(--fail-rgb),.15); color: var(--fail); }}
+.path-label .sl-close {{
   cursor: pointer; color: var(--muted); font-size: 14px;
   line-height: 1; padding: 0 2px; opacity: .6;
 }}
-.scenario-label .sl-close:hover {{ opacity: 1; color: var(--text); }}
+.path-label .sl-close:hover {{ opacity: 1; color: var(--text); }}
 
 .constraints {{ display: flex; flex-direction: column; gap: 4px; }}
 .constraint {{
@@ -1013,23 +1013,23 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 .grid-score .n-pass {{ color: var(--pass); }}
 .grid-score .n-fail {{ color: var(--fail); }}
 
-.scenario-list {{
+.path-list {{
   display: flex; flex-direction: column; gap: 3px;
 }}
-.scenario-row {{
+.path-row {{
   display: flex; align-items: center; gap: 8px;
   padding: 4px 6px; border-radius: 5px;
   cursor: pointer;
   transition: background .1s, opacity .12s;
   border: 1px solid transparent;
 }}
-.scenario-row:hover {{ background: var(--hover-bg); }}
-.scenario-row.selected {{
+.path-row:hover {{ background: var(--hover-bg); }}
+.path-row.selected {{
   background: rgba(var(--accent-rgb),.1);
   border-color: rgba(var(--accent-rgb),.3);
 }}
-.scenario-list.has-selection .scenario-row:not(.selected) {{ opacity: 0.35; }}
-.scenario-list.has-selection .scenario-row:not(.selected):hover {{ opacity: 0.85; }}
+.path-list.has-selection .path-row:not(.selected) {{ opacity: 0.35; }}
+.path-list.has-selection .path-row:not(.selected):hover {{ opacity: 0.85; }}
 
 .ball {{
   width: 10px; height: 10px; border-radius: 50%;
@@ -1037,16 +1037,16 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 }}
 .ball.pass {{ background: var(--pass); }}
 .ball.fail {{ background: var(--fail); }}
-.scenario-row.selected .ball {{ box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(255,255,255,.3); }}
+.path-row.selected .ball {{ box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgba(255,255,255,.3); }}
 
 .sc-name {{
   font-size: 11px; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   pointer-events: none;
 }}
-.scenario-row.pass .sc-name {{ color: var(--text); }}
-.scenario-row.fail  .sc-name {{ color: var(--fail); }}
-.scenario-row.selected .sc-name {{ color: var(--blue); font-weight: 600; }}
+.path-row.pass .sc-name {{ color: var(--text); }}
+.path-row.fail  .sc-name {{ color: var(--fail); }}
+.path-row.selected .sc-name {{ color: var(--blue); font-weight: 600; }}
 
 .legend {{ display: flex; gap: 8px; align-items: center; font-size: 10px; color: var(--muted); }}
 .leg-dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
@@ -1063,7 +1063,7 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
   box-shadow: 0 8px 28px rgba(0,0,0,.5);
   display: none; line-height: 1.5;
 }}
-#tooltip .tip-scenario {{ font-weight: 700; color: var(--blue); margin-bottom: 5px; }}
+#tooltip .tip-path {{ font-weight: 700; color: var(--blue); margin-bottom: 5px; }}
 #tooltip .tip-pass {{ color: var(--pass); }}
 #tooltip .tip-fail {{ color: var(--fail); margin-top: 3px; font-size: 11px; font-family: var(--mono); }}
 #tooltip .tip-hint {{ color: var(--muted); font-size: 10px; margin-top: 4px; }}
@@ -1076,10 +1076,10 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
   <div>
     <h1>🐉 User Simulation Report</h1>
     <div class="summary">
-      <span><strong>{satisfied}</strong> / <strong>{total}</strong> person×scenario checks satisfied ({score:.0%})</span>
-      <span><span class="s-pass">{n_pass} passed</span> &nbsp; <span class="s-fail">{n_fail} failed</span> &nbsp; <span class="s-scenarios">{len(scenarios)} scenarios</span> &nbsp; <span class="s-people">{len(persons_ordered)} people</span></span>
+      <span><strong>{satisfied}</strong> / <strong>{total}</strong> person×path checks satisfied ({score:.0%})</span>
+      <span><span class="s-pass">{n_pass} passed</span> &nbsp; <span class="s-fail">{n_fail} failed</span> &nbsp; <span class="s-paths">{len(paths)} paths</span> &nbsp; <span class="s-people">{len(persons_ordered)} people</span></span>
       <span class="s-effective" title="Each constraint with k distinct variables covers 4^k value combinations (domain size 4 per variable). Total: {raw_constraint_evals:,} constraint evaluations × avg 4^k factor = {effective_tests:,} effective tests.">⚡ ~{effective_tests:,} effective tests <span class="s-eff-sub">({raw_constraint_evals} constraint evals × 4^k)</span></span>
-      <span><strong>{len(scenarios)}</strong> scenarios &nbsp; <strong>{len(persons_ordered)}</strong> people</span>
+      <span><strong>{len(paths)}</strong> paths &nbsp; <strong>{len(persons_ordered)}</strong> people</span>
     </div>
   </div>
 </header>
@@ -1116,10 +1116,10 @@ function selectBall(ball, pi) {{
   const ballsEl       = document.getElementById(`balls-${{pi}}`);
   const panel         = document.getElementById(`cp-${{pi}}`);
   const goalEl        = document.getElementById(`cp-${{pi}}-goal`);
-  const labelEl       = document.getElementById(`cp-${{pi}}-scenario-label`);
+  const labelEl       = document.getElementById(`cp-${{pi}}-path-label`);
   const constraintsEl = document.getElementById(`cp-${{pi}}-constraints`);
 
-  const scenario    = ball.dataset.scenarioName;
+  const path    = ball.dataset.scenarioName;
   const desc        = ball.dataset.description || '';
   const isPass      = ball.classList.contains('pass');
   const constraints = JSON.parse(ball.dataset.constraints || '[]');
@@ -1127,18 +1127,18 @@ function selectBall(ball, pi) {{
   selectedBall[pi] = ball;
   ball.classList.add('selected');
   ballsEl.classList.add('has-selection');
-  panel.classList.add('scenario-active');
+  panel.classList.add('path-active');
 
   constraintsEl.innerHTML = buildConstraintHTML(constraints);
 
-  // Auto-expand constraint list when drilling into a scenario
+  // Auto-expand constraint list when drilling into a path
   const detailsEl = constraintsEl.closest('details');
   if (detailsEl) detailsEl.open = true;
 
   const badgeCls = isPass ? 'pass' : 'fail';
   const badgeTxt = isPass ? 'passed' : 'failed';
   labelEl.innerHTML =
-    `<span class="sl-name">${{scenario}}</span>`
+    `<span class="sl-name">${{path}}</span>`
   + `<span class="sl-badge ${{badgeCls}}">${{badgeTxt}}</span>`
   + `<span class="sl-close" title="Back to summary" data-card="${{pi}}">✕</span>`;
   labelEl.classList.add('visible');
@@ -1153,11 +1153,11 @@ function deselectCard(pi) {{
   const ballsEl       = document.getElementById(`balls-${{pi}}`);
   const panel         = document.getElementById(`cp-${{pi}}`);
   const goalEl        = document.getElementById(`cp-${{pi}}-goal`);
-  const labelEl       = document.getElementById(`cp-${{pi}}-scenario-label`);
+  const labelEl       = document.getElementById(`cp-${{pi}}-path-label`);
   const constraintsEl = document.getElementById(`cp-${{pi}}-constraints`);
 
   ballsEl.classList.remove('has-selection');
-  panel.classList.remove('scenario-active');
+  panel.classList.remove('path-active');
   labelEl.classList.remove('visible');
   labelEl.innerHTML = '';
   goalEl.textContent = AGG[pi].goal;
@@ -1180,10 +1180,10 @@ document.querySelectorAll('.ball').forEach(ball => {{
 
   ball.addEventListener('mouseenter', e => {{
     if (ball.classList.contains('selected')) return;
-    const scenario = ball.dataset.scenarioName || ball.title;
+    const path = ball.dataset.scenarioName || ball.title;
     const viols    = (ball.dataset.violations || '').split('|').filter(Boolean);
     const isPass   = ball.classList.contains('pass');
-    let html = `<div class="tip-scenario">${{scenario}}</div>`;
+    let html = `<div class="tip-path">${{path}}</div>`;
     if (isPass) {{
       html += `<div class="tip-pass">✓ satisfied</div>`;
     }} else {{
@@ -1200,7 +1200,7 @@ document.querySelectorAll('.ball').forEach(ball => {{
   ball.addEventListener('mouseleave', () => {{ tip.style.display = 'none'; }});
 }});
 
-// Close button (✕) in scenario label
+// Close button (✕) in path label
 document.addEventListener('click', e => {{
   const btn = e.target.closest('.sl-close');
   if (btn) deselectCard(parseInt(btn.dataset.card, 10));
@@ -1246,16 +1246,16 @@ window.gmTab = function(btn, name) {{
 (function() {{
   const TYPE_COLORS = {{
     persona:  ['#58a6ff','#8860c8'],
-    scenario: ['#ffa657','#c46830'],
+    path: ['#ffa657','#c46830'],
     group:    ['#3fb950','#88b84a'],
     variable: ['#b878e8','#6bbfcc'],
   }};
   const EDGE_SETS = {{
     persona_groups:    {{a:'persona', b:'group',    data:()=>window.GRAPH_DATA.persona_groups,
                          aLabel:'Personas', bLabel:'Constraint Groups'}},
-    group_scenarios:   {{a:'group',   b:'scenario', data:()=>window.GRAPH_DATA.group_scenarios,
+    group_scenarios:   {{a:'group',   b:'path', data:()=>window.GRAPH_DATA.group_scenarios,
                          aLabel:'Constraint Groups', bLabel:'Scenarios'}},
-    persona_scenarios: {{a:'persona', b:'scenario', data:()=>window.GRAPH_DATA.persona_scenarios,
+    persona_scenarios: {{a:'persona', b:'path', data:()=>window.GRAPH_DATA.persona_scenarios,
                          aLabel:'Personas', bLabel:'Scenarios'}},
     var_groups:        {{a:'variable',b:'group',    data:()=>window.GRAPH_DATA.var_groups,
                          aLabel:'Variables', bLabel:'Constraint Groups'}},

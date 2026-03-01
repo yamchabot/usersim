@@ -8,7 +8,7 @@ You'll have a working simulation in about 10 minutes.
 
 ## The idea
 
-You run your application once per scenario. That produces raw numbers.
+You run your application once per path. That produces raw numbers.
 Z3 evaluates your constraints against those numbers — thousands of checks
 from a single run. Build time stays flat. Coverage grows as you add constraints.
 
@@ -50,7 +50,7 @@ instrumentation: "python3 instrumentation.py"
 perceptions:     "python3 perceptions.py"
 users:
   - users/*.py
-scenarios:
+paths:
   - default
   - peak_load
   - degraded
@@ -59,8 +59,8 @@ output:
   report:  report.html
 ```
 
-Each scenario triggers one instrumentation run with `USERSIM_SCENARIO` set.
-The results form a matrix: every persona × every scenario.
+Each path triggers one instrumentation run with `USERSIM_PATH` set.
+The results form a matrix: every persona × every path.
 
 ---
 
@@ -72,7 +72,7 @@ Measure your app. Write numbers. Don't make judgements.
 # instrumentation.py
 import json, os, time
 
-scenario = os.environ.get("USERSIM_SCENARIO", "default")
+path = os.environ.get("USERSIM_PATH", "default")
 
 SCENARIOS = {
     "default":   {"response_ms": 120, "error_count": 0,  "requests": 100, "cache_hits": 87},
@@ -82,8 +82,8 @@ SCENARIOS = {
 
 json.dump({
     "schema":   "usersim.metrics.v1",
-    "scenario": scenario,
-    "metrics":  SCENARIOS[scenario],
+    "path": path,
+    "metrics":  SCENARIOS[path],
 }, open("/dev/stdout", "w"))
 ```
 
@@ -198,7 +198,7 @@ class OpsEngineer(Person):
 ```
 
 **The key:** same perceptions variables, completely different constraint logic per persona.
-Z3 evaluates them all in one pass against each scenario's facts.
+Z3 evaluates them all in one pass against each path's facts.
 
 ---
 
@@ -222,7 +222,7 @@ usersim run
 
 ## 7. Break it intentionally
 
-Modify `instrumentation.py` to return degraded values for all scenarios, then run again.
+Modify `instrumentation.py` to return degraded values for all paths, then run again.
 You'll see exactly which constraints fail and why — every persona reports independently.
 
 ---
@@ -235,7 +235,7 @@ Push more reasoning into Z3:
 ```python
 def constraints(self, P):
     return [
-        # Matrix invariant: total results must equal persons × scenarios
+        # Matrix invariant: total results must equal persons × paths
         P.results_total == P.person_count * P.scenario_count,
 
         # Timing budget scales with work: allow 10ms per result
@@ -252,7 +252,7 @@ def constraints(self, P):
     ]
 ```
 
-Every additional constraint is free coverage. The scenario runs don't change.
+Every additional constraint is free coverage. The path runs don't change.
 Z3 evaluates them all in milliseconds.
 
 ---

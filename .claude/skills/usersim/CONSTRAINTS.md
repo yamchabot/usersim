@@ -29,8 +29,8 @@ they're clever, but because they give you combinatorial coverage automatically.
 |-----------|---------|----------------|-------------|
 | 1 var | `P.exit_code == 0` | 4 | Sanity checks, hard requirements |
 | 2 var | `P.wall_ms <= P.results_total * 3000` | 16 | Scalability relationships |
-| 3 var | `P.wall_ms <= P.persons * P.scenarios * 3000` | 64 | Budget proportionality |
-| 4 var | `P.bytes >= P.total * P.persons * P.scenarios * 50` | 256 | Size/content relationships |
+| 3 var | `P.wall_ms <= P.persons * P.paths * 3000` | 64 | Budget proportionality |
+| 4 var | `P.bytes >= P.total * P.persons * P.paths * 50` | 256 | Size/content relationships |
 
 Single-variable checks are the floor, not the ceiling. A system with only single-variable
 constraints has shallow coverage. Aim to have at least a third of your constraints touch
@@ -50,7 +50,7 @@ named("group/check-name", expr)
 
 The name appears in:
 - Report failure output
-- The Group × Scenario coverage matrix
+- The Group × Path coverage matrix
 - The constraint list in each persona card
 - The bipartite graph visualization
 
@@ -61,7 +61,7 @@ Naming convention: `group/check-name` where group is a domain prefix:
 | `pipeline` | Exit code → output coherence |
 | `timing` | Wall clock budgets |
 | `errors` | Denial paths, non-zero exits, stderr |
-| `matrix` | results_total = persons × scenarios invariants |
+| `matrix` | results_total = persons × paths invariants |
 | `report` | File creation, size, self-containment |
 | `scaffold` | Init output, file structure |
 | `judge` | Judge subcommand correctness |
@@ -89,14 +89,14 @@ named("pipeline/no-silent-success",
 ```
 
 **Vacuous antecedents are wasted coverage.** If `P.pipeline_exit_code` is never 0 in any
-scenario, then every `Implies(P.pipeline_exit_code == 0, ...)` fires vacuously and provides
+path, then every `Implies(P.pipeline_exit_code == 0, ...)` fires vacuously and provides
 zero signal. Check after every run:
 
 ```bash
 python3 -c "
 import json
 r = json.load(open('results.json'))
-vac = [(x['person'], x['scenario'], c['label'])
+vac = [(x['person'], x['path'], c['label'])
        for x in r['results']
        for c in x.get('constraints', [])
        if c.get('antecedent_fired') is False]
@@ -105,7 +105,7 @@ for p,s,l in vac[:20]: print(f'  {p}/{s}: {l}')
 "
 ```
 
-If vacuous constraints exist, add a scenario that exercises the antecedent.
+If vacuous constraints exist, add a path that exercises the antecedent.
 
 ---
 
@@ -204,7 +204,7 @@ summary scalar instead.
 If a sequence has branching logic (success path A, failure path B, recovery path C) that
 you need to verify separately:
 
-1. Instrument each path as a separate scenario — scenarios are free, solver time is not
+1. Instrument each path as a separate path — paths are free, solver time is not
 2. Use a `path_taken` integer perception (`0=A, 1=B, 2=C`) and condition constraints on it
 3. Consider whether the branching logic belongs in instrumentation (did it take path A?) or
    in Z3 (given it took path A, were the postconditions met?)
@@ -244,7 +244,7 @@ def timing_invariants(P, max_ms_per_result=3000, max_total_ms=60000):
         named("timing/hard-ceiling",
               Implies(P.pipeline_wall_clock_ms > 0,
                       P.pipeline_wall_clock_ms <= max_total_ms)),
-        named("timing/floor-at-least-10ms-per-scenario",
+        named("timing/floor-at-least-10ms-per-path",
               Implies(P.results_total >= 1,
                       P.pipeline_wall_clock_ms >= P.scenario_count * 10)),
     ]
@@ -261,7 +261,7 @@ def timing_invariants(P, max_ms_per_result=3000, max_total_ms=60000):
 Before committing a persona, check:
 
 - [ ] At least 30% of constraints touch 2+ variables
-- [ ] Every `Implies` antecedent fires in at least one scenario (not vacuous)
+- [ ] Every `Implies` antecedent fires in at least one path (not vacuous)
 - [ ] At least one constraint is unique to this persona (not shared with all others)
 - [ ] No constraint always passes regardless of system state (verify by imagining a broken system)
 - [ ] No constraint always fails (verify by reading actual perception values from a run)
@@ -283,7 +283,7 @@ After a run, `results.json` has per-constraint outcomes:
 ```
 
 - `passed: false` → the constraint was violated; the system broke this rule
-- `antecedent_fired: false` → the antecedent never became true in this scenario; vacuous pass
+- `antecedent_fired: false` → the antecedent never became true in this path; vacuous pass
 - `antecedent_fired: null` → no antecedent (plain assertion); always counted as fired
 
 The `expr` field shows the human-readable Z3 formula including the actual evaluated values
@@ -325,6 +325,6 @@ of the consequent. This is what appears in the report's constraint list.
 
 **Mistake: constraint that can never fire vacuously**
 
-If a scenario never exercises a code path, constraints gated on that path are vacuously true.
-Add a `full_integration` scenario that exercises every subsystem in one pass. This is the
+If a path never exercises a code path, constraints gated on that path are vacuously true.
+Add a `full_integration` path that exercises every subsystem in one pass. This is the
 strongest guarantee against vacuous coverage.

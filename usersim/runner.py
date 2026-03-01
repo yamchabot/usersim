@@ -7,7 +7,7 @@ Two modes:
        usersim run                    # reads usersim.yaml
        usersim run --config ci.yaml   # explicit config
    usersim reads the config, runs instrumentation → perceptions → judgement
-   for each declared scenario, then outputs results.  No shell piping needed.
+   for each declared path, then outputs results.  No shell piping needed.
 
 2. Programmatic (for library use or advanced scripting):
        run_pipeline(perceptions_script, user_files, metrics=<dict>)
@@ -19,9 +19,9 @@ Config file schema (usersim.yaml):
     perceptions: "python3 perceptions.py"
     users:
       - users/*.py
-    scenarios:
+    paths:
       - default
-      # or with descriptions (shown in HTML report when clicking a scenario ball):
+      # or with descriptions (shown in HTML report when clicking a path ball):
       # - name: baseline
       #   description: "Fresh install, no existing data"
       # - name: offline
@@ -100,23 +100,23 @@ def _normalise_config(raw: dict, base_dir: Path) -> dict:
     cfg["_user_files"] = user_files
 
     # Scenarios: list of names (strings) or objects with name + description
-    raw_scenarios = cfg.get("scenarios", ["default"])
-    if isinstance(raw_scenarios, str):
-        raw_scenarios = [raw_scenarios]
-    cfg["_scenarios"] = [
+    raw_paths = cfg.get("paths", ["default"])
+    if isinstance(raw_paths, str):
+        raw_paths = [raw_paths]
+    cfg["_paths"] = [
         s if isinstance(s, str) else s.get("name", str(s))
-        for s in raw_scenarios
+        for s in raw_paths
     ]
-    # Optional descriptions keyed by scenario name
-    cfg["_scenario_descriptions"] = {
+    # Optional descriptions keyed by path name
+    cfg["_path_descriptions"] = {
         s["name"]: s.get("description", "")
-        for s in raw_scenarios
+        for s in raw_paths
         if isinstance(s, dict) and "name" in s and s.get("description")
     }
-    # Optional tags keyed by scenario name (default: all tags / untagged)
-    cfg["_scenario_tags"] = {
+    # Optional tags keyed by path name (default: all tags / untagged)
+    cfg["_path_tags"] = {
         s["name"]: s.get("tags", [])
-        for s in raw_scenarios
+        for s in raw_paths
         if isinstance(s, dict) and "name" in s
     }
 
@@ -143,7 +143,7 @@ def _resolve_output_path(path: "str | Path | None", base_dir: Path) -> "str | No
 
 def run_from_config(
     config: "dict | str | Path | None" = None,
-    scenario_override: "str | None" = None,
+    path_override: "str | None" = None,
     output_path: "str | Path | None" = None,
     verbose: bool = False,
     tags: "list[str] | None" = None,
@@ -151,17 +151,17 @@ def run_from_config(
     """
     Run the full pipeline as declared in a usersim.yaml config file.
 
-    - Runs instrumentation once per scenario (USERSIM_SCENARIO env var set)
-    - Pipes metrics → perceptions → judgement for each scenario
-    - Returns a single results dict or a matrix dict (multiple scenarios)
+    - Runs instrumentation once per path (USERSIM_PATH env var set)
+    - Pipes metrics → perceptions → judgement for each path
+    - Returns a single results dict or a matrix dict (multiple paths)
 
     Args:
         config:            path to config file, or already-loaded dict, or None (auto-discover)
-        scenario_override: run only this scenario (ignores config scenarios list)
+        path_override: run only this path (ignores config paths list)
         output_path:       write results JSON here; None → stdout
         verbose:           print stage info to stderr
-        tags:              if provided, only run scenarios whose tags overlap with this list;
-                           untagged scenarios are included unless tags is non-empty
+        tags:              if provided, only run paths whose tags overlap with this list;
+                           untagged paths are included unless tags is non-empty
     """
     from usersim.judgement.engine import _write_output
 
@@ -172,33 +172,33 @@ def run_from_config(
 
     base_dir   = cfg["_base_dir"]
     user_files = cfg["_user_files"]
-    scenarios  = [scenario_override] if scenario_override else cfg["_scenarios"]
+    paths  = [path_override] if path_override else cfg["_paths"]
 
     # Tags that never run unless explicitly requested
     _OPT_IN_TAGS = {"expensive"}
 
-    # Filter scenarios by tag
-    if not scenario_override:
-        scenario_tags = cfg.get("_scenario_tags", {})
+    # Filter paths by tag
+    if not path_override:
+        path_tags = cfg.get("_path_tags", {})
         tag_set = set(tags) if tags else set()
 
         def _should_run(s):
-            s_tags = set(scenario_tags.get(s, []))
+            s_tags = set(path_tags.get(s, []))
             opt_in = s_tags & _OPT_IN_TAGS
             if opt_in:
                 # Opt-in tags: only run when explicitly requested
                 return bool(opt_in & tag_set)
             if tag_set:
-                # Normal tag filter: untagged scenarios always pass
+                # Normal tag filter: untagged paths always pass
                 return not s_tags or bool(s_tags & tag_set)
             return True
 
-        scenarios = [s for s in scenarios if _should_run(s)]
+        paths = [s for s in paths if _should_run(s)]
         if verbose and (tags or any(
-            _OPT_IN_TAGS & set(scenario_tags.get(s, []))
-            for s in cfg["_scenarios"]
+            _OPT_IN_TAGS & set(path_tags.get(s, []))
+            for s in cfg["_paths"]
         )):
-            print(f"[usersim] tag filter {tags or []!r}: running {len(scenarios)} scenario(s)", file=sys.stderr)
+            print(f"[usersim] tag filter {tags or []!r}: running {len(paths)} path(s)", file=sys.stderr)
 
     instr_cmd = cfg["instrumentation"]
     perc_cmd  = cfg["perceptions"]
@@ -206,18 +206,18 @@ def run_from_config(
 
     all_results = []
 
-    for scenario in scenarios:
+    for path in paths:
         if verbose:
-            print(f"[usersim] scenario: {scenario}", file=sys.stderr)
+            print(f"[usersim] path: {path}", file=sys.stderr)
 
         try:
             # Step 1: run instrumentation
-            metrics_doc = _run_command(instr_cmd, stdin_data=None, scenario=scenario,
+            metrics_doc = _run_command(instr_cmd, stdin_data=None, path=path,
                                        base_dir=base_dir, label="instrumentation", verbose=verbose)
             validate_metrics(metrics_doc)
 
             # Step 2: run perceptions
-            perc_doc = _run_perceptions_cmd(perc_cmd, metrics_doc, scenario=scenario,
+            perc_doc = _run_perceptions_cmd(perc_cmd, metrics_doc, path=path,
                                             base_dir=base_dir, verbose=verbose)
             validate_perceptions(perc_doc)
 
@@ -230,20 +230,20 @@ def run_from_config(
 
         except (RuntimeError, ValueError) as exc:
             # Instrumentation or perceptions failed — record error result and continue
-            print(f"[usersim] scenario {scenario!r} error: {exc}", file=sys.stderr)
+            print(f"[usersim] path {path!r} error: {exc}", file=sys.stderr)
             result = {
                 "results": [],
                 "error": str(exc),
-                "scenario": scenario,
+                "path": path,
             }
 
-        # Inject scenario description (if declared in config) into each result entry
-        sc_desc = cfg.get("_scenario_descriptions", {}).get(scenario, "")
+        # Inject path description (if declared in config) into each result entry
+        sc_desc = cfg.get("_path_descriptions", {}).get(path, "")
         if sc_desc:
             for r in result.get("results", []):
                 r["description"] = sc_desc
 
-        all_results.append((scenario, result))
+        all_results.append((path, result))
 
     # ── Assemble final output ──────────────────────────────────────────────────
     if len(all_results) == 1:
@@ -252,11 +252,11 @@ def run_from_config(
         eff_output_path = _resolve_output_path(raw_out, base_dir)
         _write_output(output, eff_output_path)
     else:
-        # Matrix: flatten all scenario results into one doc
+        # Matrix: flatten all path results into one doc
         flat = []
-        for scenario, result in all_results:
+        for path, result in all_results:
             for r in result["results"]:
-                r["scenario"] = scenario
+                r["path"] = path
                 flat.append(r)
         satisfied = sum(1 for r in flat if r["satisfied"])
 
@@ -315,7 +315,7 @@ def run_from_config(
 def _run_command(
     cmd: str,
     stdin_data: "str | None",
-    scenario: str,
+    path: str,
     base_dir: Path,
     label: str,
     verbose: bool,
@@ -331,7 +331,7 @@ def _run_command(
 
     env = {
         **os.environ,
-        "USERSIM_SCENARIO": scenario,
+        "USERSIM_PATH": path,
         "PYTHONPATH": pythonpath,
     }
     result = subprocess.run(
@@ -365,7 +365,7 @@ def _run_command(
 def _run_perceptions_cmd(
     cmd: str,
     metrics_doc: dict,
-    scenario: str,
+    path: str,
     base_dir: Path,
     verbose: bool,
 ) -> dict:
@@ -379,21 +379,21 @@ def _run_perceptions_cmd(
     script_path = base_dir / cmd.strip().split()[-1]  # last token = script file
 
     if script_path.suffix == ".py" and script_path.exists():
-        return _call_python_perceptions(script_path, metrics_doc, scenario, verbose)
+        return _call_python_perceptions(script_path, metrics_doc, path, verbose)
 
     # Generic subprocess: pipe metrics JSON to stdin
     metrics_json = json.dumps(metrics_doc)
-    return _run_command(cmd, stdin_data=metrics_json, scenario=scenario,
+    return _run_command(cmd, stdin_data=metrics_json, path=path,
                         base_dir=base_dir, label="perceptions", verbose=verbose)
 
 
 def _call_python_perceptions(
     script: Path,
     metrics_doc: dict,
-    scenario: str,
+    path: str,
     verbose: bool,
 ) -> dict:
-    """Import a Python perceptions.py and call compute(metrics, scenario=...)."""
+    """Import a Python perceptions.py and call compute(metrics, path=...)."""
     import importlib.util
 
     import sys as _sys
@@ -421,11 +421,11 @@ def _call_python_perceptions(
             "command that reads stdin and writes JSON to stdout."
         )
 
-    result = mod.compute(metrics_doc["metrics"], scenario=scenario)
+    result = mod.compute(metrics_doc["metrics"], path=path)
     if isinstance(result, dict) and "facts" not in result:
         result = {
             "schema":   PERCEPTIONS_SCHEMA,
-            "scenario": scenario,
+            "path": path,
             "person":   "all",
             "facts":    result,
         }
@@ -439,7 +439,7 @@ def run_pipeline(
     user_files: list,
     metrics: "dict | None" = None,
     output_path: "str | Path | None" = None,
-    scenario: str = "default",
+    path: str = "default",
     person: "str | None" = None,
     verbose: bool = False,
 ) -> dict:
@@ -463,7 +463,7 @@ def run_pipeline(
     perc_doc = _run_perceptions_cmd(
         cmd=str(perceptions_script),
         metrics_doc=metrics_doc,
-        scenario=scenario,
+        path=path,
         base_dir=Path("."),
         verbose=verbose,
     )

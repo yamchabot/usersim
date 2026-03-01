@@ -1,40 +1,40 @@
 /**
- * ScenarioRunner
+ * Collector
  *
- * Handles browser lifecycle, scenario dispatch, and usersim.metrics.v1 output.
- * You write the scenario logic; this handles everything else.
+ * Handles browser lifecycle, path dispatch, and usersim.metrics.v1 output.
+ * You write the collection logic; this handles everything else.
  *
  * Usage:
- *   import { createRunner } from 'usersim-web';
+ *   import { createCollector } from 'usersim-web';
  *
- *   const runner = createRunner({ url: 'http://localhost:8000' });
+ *   const collector = createCollector({ url: 'http://localhost:8000' });
  *
- *   runner.scenario('baseline', async ({ page }) => {
+ *   collector.path('baseline', async ({ page }) => {
  *     await page.click('#add-habit');
  *     const count = await page.evaluate(() => document.querySelectorAll('.habit').length);
  *     return { habit_count: count };
  *   });
  *
- *   runner.run();
+ *   collector.collect();
  */
 
-export class ScenarioRunner {
-  constructor({ url, scenario, backend = 'auto' } = {}) {
+export class Collector {
+  constructor({ url, path, backend = 'auto' } = {}) {
     this._url      = url;
-    this._scenario = scenario ?? process.env.USERSIM_SCENARIO ?? process.argv[2];
+    this._path     = path ?? process.env.USERSIM_PATH ?? process.argv[2];
     this._backend  = backend;
-    this._scenarios    = new Map();
-    this._initScripts  = [];
+    this._paths       = new Map();
+    this._initScripts = [];
   }
 
   /**
-   * Register a scenario by name.
+   * Register a path by name.
    * The handler receives { page, reload } and must return a plain metrics object.
    * reload() navigates to a fresh page instance preserving storage state,
    * and returns the new page.
    */
-  scenario(name, fn) {
-    this._scenarios.set(name, fn);
+  path(name, fn) {
+    this._paths.set(name, fn);
     return this;
   }
 
@@ -51,23 +51,23 @@ export class ScenarioRunner {
   }
 
   /**
-   * Run the active scenario (from USERSIM_SCENARIO env var, argv[2], or constructor).
+   * Run the active path (from USERSIM_PATH env var, argv[2], or constructor).
    * Writes usersim.metrics.v1 JSON to stdout on success.
    * Writes errors to stderr and exits 1 on failure.
    */
-  async run() {
-    const name = this._scenario;
+  async collect() {
+    const name = this._path;
 
     if (!name) {
-      process.stderr.write('usersim-web: no scenario specified\n');
-      process.stderr.write('  set USERSIM_SCENARIO or pass as first argument\n');
+      process.stderr.write('usersim-web: no path specified\n');
+      process.stderr.write('  set USERSIM_PATH or pass as first argument\n');
       process.exit(1);
     }
 
-    const fn = this._scenarios.get(name);
+    const fn = this._paths.get(name);
     if (!fn) {
-      process.stderr.write(`usersim-web: unknown scenario "${name}"\n`);
-      process.stderr.write(`  registered: ${[...this._scenarios.keys()].join(', ')}\n`);
+      process.stderr.write(`usersim-web: unknown path "${name}"\n`);
+      process.stderr.write(`  registered: ${[...this._paths.keys()].join(', ')}\n`);
       process.exit(1);
     }
 
@@ -76,13 +76,13 @@ export class ScenarioRunner {
       const ctx     = await backend.newContext(this._url, this._initScripts);
       const metrics = await fn(ctx);
       process.stdout.write(JSON.stringify({
-        schema:   'usersim.metrics.v1',
-        scenario: name,
-        metrics:  metrics ?? {},
+        schema:  'usersim.metrics.v1',
+        path:    name,
+        metrics: metrics ?? {},
       }, null, 2));
       process.stdout.write('\n');
     } catch (err) {
-      process.stderr.write(`usersim-web: scenario "${name}" threw:\n  ${err.message}\n`);
+      process.stderr.write(`usersim-web: path "${name}" threw:\n  ${err.message}\n`);
       if (err.stack) process.stderr.write(err.stack + '\n');
       process.exit(1);
     } finally {
@@ -108,8 +108,13 @@ export class ScenarioRunner {
   }
 }
 
+export function createCollector(opts) {
+  return new Collector(opts);
+}
+
+// Keep createRunner as a deprecated alias
 export function createRunner(opts) {
-  return new ScenarioRunner(opts);
+  return new Collector(opts);
 }
 
 async function canImport(name) {

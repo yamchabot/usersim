@@ -15,7 +15,7 @@ from constraint_library import (
 class MLEngineer(Person):
     name    = "ml_engineer"
     role    = "ML Engineer"
-    goal    = "validate output shape invariants and behavioral contracts across all scenarios"
+    goal    = "validate output shape invariants and behavioral contracts across all paths"
     pronoun = "he"
 
     def constraints(self, P):
@@ -32,7 +32,7 @@ class MLEngineer(Person):
             # Schema must be stable — ML pipeline depends on field names
             named("ml/schema-is-stable",
                   Implies(P.pipeline_exit_code == 0, P.schema_is_correct)),
-            # Result count must equal person * scenario (no partial runs)
+            # Result count must equal person * path (no partial runs)
             named("ml/no-partial-evaluation",
                   Implies(P.results_total >= 1,
                           P.results_total == P.person_count * P.scenario_count)),

@@ -41,7 +41,7 @@ Every traditional test framework works the same way:
 
 The application run is the expensive part. The assertion is cheap. But they're bundled — you pay the full cost of a run for every single assertion.
 
-usersim inverts this. You run your application once per scenario. That produces a snapshot of facts — raw numbers about how your system behaved. Then Z3 evaluates every constraint in every persona against that snapshot simultaneously. The application run cost is fixed. The constraint evaluation cost is effectively zero.
+usersim inverts this. You run your application once per path. That produces a snapshot of facts — raw numbers about how your system behaved. Then Z3 evaluates every constraint in every persona against that snapshot simultaneously. The application run cost is fixed. The constraint evaluation cost is effectively zero.
 
 Add 100 more constraints across 10 more personas: Z3 evaluates 1,000 additional checks in milliseconds. No additional application runs.
 
@@ -64,7 +64,7 @@ Z3 is built for:
 
 Every one of these is free once you've collected the facts. Z3 evaluates all of them in one pass.
 
-The design target: write constraint files that are *dense*. Many personas. Many constraints per persona. Z3 doing real arithmetic and relational reasoning, not just threshold checks. The scenario runs stay small; the coverage is enormous.
+The design target: write constraint files that are *dense*. Many personas. Many constraints per persona. Z3 doing real arithmetic and relational reasoning, not just threshold checks. The path runs stay small; the coverage is enormous.
 
 ---
 
@@ -103,12 +103,12 @@ The rule: **if it can be expressed as a Z3 constraint, it belongs in Z3**. Push 
 ## What good looks like
 
 A mature usersim suite:
-- 5–20 scenarios that exercise realistic application states
+- 5–20 paths that exercise realistic application states
 - Rich instrumentation that exposes every measurable variable
 - A thin perceptions file that just passes numbers through with stable names
 - 10–50+ personas with dense, differentiated constraint sets
 - Z3 doing arithmetic, relational reasoning, and invariant checking — not just threshold comparisons
 
-The scenario runs are bounded and cheap. The constraint evaluation is free. Coverage grows without limit as you add personas and constraints.
+The path runs are bounded and cheap. The constraint evaluation is free. Coverage grows without limit as you add personas and constraints.
 
 That's how you get 10,000× test coverage without a 10,000× build.

@@ -1,13 +1,13 @@
 """
-usersim calibrate — print actual perception values per scenario.
+usersim calibrate — print actual perception values per path.
 
-Runs instrumentation for each scenario and feeds the output through perceptions,
+Runs instrumentation for each path and feeds the output through perceptions,
 printing the resulting dict so you can recalibrate constraint thresholds.
 
 Usage:
     usersim calibrate                    # reads usersim.yaml
     usersim calibrate --config ci.yaml
-    usersim calibrate --scenario normal_run
+    usersim calibrate --path normal_run
 """
 
 import json
@@ -18,7 +18,7 @@ from pathlib import Path
 
 def run_calibrate(config: dict, scenario_override: str | None = None) -> int:
     """
-    Run instrumentation + perceptions for each scenario and print perception values.
+    Run instrumentation + perceptions for each path and print perception values.
     Returns 0 on success, 1 on error.
     """
     import subprocess
@@ -26,7 +26,7 @@ def run_calibrate(config: dict, scenario_override: str | None = None) -> int:
 
     instr_cmd    = config.get("instrumentation", "")
     perc_path    = config.get("perceptions", "")
-    scenarios    = config.get("scenarios", ["default"])
+    paths    = config.get("paths", ["default"])
     base_dir     = config.get("_base_dir", Path("."))
 
     if not instr_cmd:
@@ -45,9 +45,9 @@ def run_calibrate(config: dict, scenario_override: str | None = None) -> int:
     mod  = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
-    # Normalise scenario list
+    # Normalise path list
     scenario_names = []
-    for s in scenarios:
+    for s in paths:
         if isinstance(s, dict):
             scenario_names.append(s["name"])
         else:
@@ -57,20 +57,20 @@ def run_calibrate(config: dict, scenario_override: str | None = None) -> int:
         scenario_names = [scenario_override]
 
     errors = 0
-    for scenario in scenario_names:
-        env = {**os.environ, "USERSIM_SCENARIO": scenario}
+    for path in scenario_names:
+        env = {**os.environ, "USERSIM_PATH": path}
         try:
             r = subprocess.run(
                 instr_cmd, shell=True, capture_output=True, text=True,
                 env=env, cwd=str(base_dir)
             )
         except Exception as e:
-            print(f"\n--- {scenario}: FAILED (could not run instrumentation: {e}) ---", file=sys.stderr)
+            print(f"\n--- {path}: FAILED (could not run instrumentation: {e}) ---", file=sys.stderr)
             errors += 1
             continue
 
         if r.returncode != 0 or not r.stdout.strip():
-            print(f"\n--- {scenario}: FAILED (exit {r.returncode}) ---", file=sys.stderr)
+            print(f"\n--- {path}: FAILED (exit {r.returncode}) ---", file=sys.stderr)
             if r.stderr.strip():
                 print(r.stderr[:400], file=sys.stderr)
             errors += 1
@@ -79,20 +79,20 @@ def run_calibrate(config: dict, scenario_override: str | None = None) -> int:
         try:
             raw = json.loads(r.stdout)
         except json.JSONDecodeError as e:
-            print(f"\n--- {scenario}: FAILED (bad JSON: {e}) ---", file=sys.stderr)
+            print(f"\n--- {path}: FAILED (bad JSON: {e}) ---", file=sys.stderr)
             errors += 1
             continue
 
         metrics = raw.get("metrics", raw)
 
         try:
-            perc = mod.compute(metrics, scenario=scenario)
+            perc = mod.compute(metrics, path=path)
         except Exception as e:
-            print(f"\n--- {scenario}: FAILED (perceptions error: {e}) ---", file=sys.stderr)
+            print(f"\n--- {path}: FAILED (perceptions error: {e}) ---", file=sys.stderr)
             errors += 1
             continue
 
-        print(f"\n--- {scenario} ---")
+        print(f"\n--- {path} ---")
         for k, v in sorted(perc.items()):
             print(f"  {k}: {v}")
 

@@ -35,10 +35,10 @@ class FirstTimeUser(Person):
             # Pipeline must exit cleanly
             named("first-time/pipeline-exits-0",
                   Implies(P.pipeline_exit_code >= 0, P.pipeline_exit_code == 0)),
-            # Must have evaluated multiple persons and scenarios
+            # Must have evaluated multiple persons and paths
             named("first-time/multiple-persons-evaluated",
                   Implies(P.pipeline_exit_code == 0, P.person_count >= 1)),
-            named("first-time/multiple-scenarios-evaluated",
+            named("first-time/multiple-paths-evaluated",
                   Implies(P.pipeline_exit_code == 0, P.scenario_count >= 1)),
             # Report must succeed
             named("first-time/report-exits-0",

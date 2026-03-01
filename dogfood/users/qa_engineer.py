@@ -16,7 +16,7 @@ from constraint_library import (
 class QAEngineer(Person):
     name    = "qa_engineer"
     role    = "QA / Test Engineer"
-    goal    = "verify every scenario exercises real constraints and no coverage gaps exist"
+    goal    = "verify every path exercises real constraints and no coverage gaps exist"
     pronoun = "she"
 
     def constraints(self, P):
@@ -31,7 +31,7 @@ class QAEngineer(Person):
             named("qa/full-matrix-coverage",
                   Implies(P.results_total >= 1,
                           P.results_total == P.person_count * P.scenario_count)),
-            named("qa/minimum-scenario-count",
+            named("qa/minimum-path-count",
                   Implies(P.pipeline_exit_code == 0, P.scenario_count >= 2)),
             named("qa/minimum-person-count",
                   Implies(P.pipeline_exit_code == 0, P.person_count >= 2)),
@@ -39,7 +39,7 @@ class QAEngineer(Person):
             named("qa/80pct-pass-rate-minimum",
                   Implies(And(P.pipeline_exit_code == 0, P.results_total >= 1),
                           P.results_satisfied * 5 >= P.results_total * 4)),
-            named("qa/error-scenarios-covered",
+            named("qa/error-paths-covered",
                   Implies(P.missing_config_exit_code >= 0,
                           P.missing_config_exit_code == 1)),
             named("qa/judge-result-count-consistent",

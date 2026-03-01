@@ -14,7 +14,7 @@ from constraint_library import (
 class ProductManager(Person):
     name    = "product_manager"
     role    = "Product Manager"
-    goal    = "see provable user story satisfaction across all personas and scenarios"
+    goal    = "see provable user story satisfaction across all personas and paths"
     pronoun = "she"
 
     def constraints(self, P):
@@ -31,8 +31,8 @@ class ProductManager(Person):
             # Must evaluate multiple personas — one user type isn't a product
             named("pm/multiple-personas-required",
                   Implies(P.pipeline_exit_code == 0, P.person_count >= 3)),
-            # Must cover multiple scenarios — one scenario isn't a product
-            named("pm/multiple-scenarios-required",
+            # Must cover multiple paths — one path isn't a product
+            named("pm/multiple-paths-required",
                   Implies(P.pipeline_exit_code == 0, P.scenario_count >= 3)),
             # Total results must represent full cross-product
             named("pm/full-cross-product-evaluated",

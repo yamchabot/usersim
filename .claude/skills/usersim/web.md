@@ -3,8 +3,8 @@
 Use this skill when the application under test runs in a browser.
 Read `.claude/skills/SKILL.md` first — this skill covers Phase 4 (Instrumentation) only.
 
-`usersim-web` is a Node.js package that handles browser lifecycle, scenario dispatch,
-and `usersim.metrics.v1` output. You write the scenario logic and data extraction;
+`usersim-web` is a Node.js package that handles browser lifecycle, path dispatch,
+and `usersim.metrics.v1` output. You write the path logic and data extraction;
 it handles everything else.
 
 ---
@@ -29,7 +29,7 @@ Playwright is used if available; jsdom is the fallback.
 
 ---
 
-## collect.js — scenario runner
+## collect.js — path runner
 
 Create `user_simulation/instrumentation/collect.js`:
 
@@ -38,7 +38,7 @@ import { createRunner } from 'usersim-web';
 
 const runner = createRunner({
   url:      'http://localhost:8000',   // your app's URL
-  scenario: process.env.USERSIM_SCENARIO,
+  path: process.env.USERSIM_PATH,
 });
 
 // Optional: inject monitoring hooks before the app loads
@@ -48,7 +48,7 @@ const runner = createRunner({
 //   fetch = (...a) => { window.__mon.fetches++; return _f(...a); };
 // `);
 
-runner.scenario('baseline', async ({ page }) => {
+runner.path('baseline', async ({ page }) => {
   // Perform actions using the Playwright Page API (or jsdom subset)
   await page.click('#some-button');
   await page.fill('#some-input', 'hello');
@@ -68,7 +68,7 @@ runner.scenario('baseline', async ({ page }) => {
   };
 });
 
-runner.scenario('persistence', async ({ page, reload }) => {
+runner.path('persistence', async ({ page, reload }) => {
   // seed state
   await page.click('#add-item');
   const before = await page.evaluate(() =>
@@ -110,7 +110,7 @@ instrumentation: /path/to/node user_simulation/instrumentation/collect.js
 
 ## Page API
 
-The `page` object passed to each scenario handler is the raw Playwright `Page`
+The `page` object passed to each path handler is the raw Playwright `Page`
 when using the Playwright backend. Refer to the Playwright documentation for
 the full API: https://playwright.dev/docs/api/class-page
 
@@ -151,7 +151,7 @@ runner.inject(`
   };
 `);
 
-runner.scenario('baseline', async ({ page }) => {
+runner.path('baseline', async ({ page }) => {
   // ... actions ...
   const mon = await page.evaluate(() => window.__mon);
   return {
@@ -163,11 +163,11 @@ runner.scenario('baseline', async ({ page }) => {
 
 ---
 
-## Testing scenarios individually
+## Testing paths individually
 
 ```bash
-USERSIM_SCENARIO=baseline node user_simulation/instrumentation/collect.js
-USERSIM_SCENARIO=persistence node user_simulation/instrumentation/collect.js
+USERSIM_PATH=baseline node user_simulation/instrumentation/collect.js
+USERSIM_PATH=persistence node user_simulation/instrumentation/collect.js
 ```
 
 Each should print valid `usersim.metrics.v1` JSON to stdout with no errors

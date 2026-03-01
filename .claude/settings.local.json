@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(usersim:*)",
+      "Bash(/opt/homebrew/opt/python@3.11/bin/python3.11:*)",
+      "Bash(USERSIM_SCENARIO=report_generation python3:*)",
+      "Bash(usersim report:*)"
+    ]
+  }
+}
