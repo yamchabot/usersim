@@ -68,10 +68,15 @@ class TestFactNamespace:
         ns = FactNamespace({"foo": BoolVal(True)})
         assert ns.foo is not None
 
-    def test_missing_fact_raises(self):
+    def test_missing_fact_returns_sentinel(self):
+        """Missing facts return IntVal(-1) so library constraints degrade gracefully."""
+        from usersim.judgement.z3_compat import Solver, sat
         ns = FactNamespace({"foo": BoolVal(True)})
-        with pytest.raises(AttributeError, match="bar"):
-            _ = ns.bar
+        sentinel = ns.bar   # should not raise
+        # The sentinel evaluates to -1 (unobserved), so Implies(x >= 0, ...) is vacuous
+        s = Solver()
+        s.add(sentinel == -1)
+        assert s.check() == sat
 
     def test_repr(self):
         ns = FactNamespace({"a": BoolVal(True), "b": BoolVal(False)})
@@ -147,11 +152,18 @@ class TestEvaluatePerson:
         r = evaluate_person(p, {"is_large": False, "has_clusters": False})
         assert r["satisfied"] is True
 
-    def test_missing_fact_returns_error(self):
-        p = self._person(lambda P: [P.nonexistent_fact])
+    def test_missing_fact_is_sentinel_minus1(self):
+        """Missing fact → IntVal(-1) → constraint P.nonexistent_fact >= 0 fails.
+        
+        This verifies the sentinel mechanism: library constraints use
+        Implies(P.x >= 0, ...) so they're vacuous when x is unobserved.
+        A raw reference to a missing fact without an Implies guard will fail.
+        """
+        from usersim.judgement.z3_compat import Implies
+        # Constraint that checks sentinel is -1 → should pass
+        p = self._person(lambda P: [P.nonexistent_fact == -1])
         r = evaluate_person(p, {})
-        assert r["satisfied"] is False
-        assert "error" in r or len(r["violations"]) > 0
+        assert r["satisfied"] is True
 
 
 # ── Perception library ─────────────────────────────────────────────────────────

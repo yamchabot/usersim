@@ -35,9 +35,12 @@ class FactNamespace:
         try:
             return self._vars[name]
         except KeyError:
-            raise AttributeError(
-                f"Fact '{name}' not found.  Available facts: {sorted(self._vars)}"
-            )
+            # Return a sentinel expression that evaluates to -1 (unobserved).
+            # Constraints gated with Implies(P.x >= 0, ...) will be vacuously
+            # true when x == -1, so library functions safely reference facts
+            # that are absent from a given perceptions dict.
+            from usersim.judgement.z3_compat import IntVal
+            return IntVal(-1)
 
     def __repr__(self):
         return f"Facts({sorted(self._vars.keys())})"
