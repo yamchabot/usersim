@@ -66,6 +66,28 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     n_pass    = satisfied
     n_fail    = total - satisfied
 
+    # ── Effective test count ───────────────────────────────────────────────────
+    # Each constraint with k distinct variables is simultaneously verified over
+    # all value combinations. Using domain size 4 per variable (conservative for
+    # a mix of booleans and small integers), effective_tests = sum(4^k).
+    import re as _re_eff
+    _Z3K = {"If","then","And","Or","Not","Implies","True","False","true","false","and","or","not"}
+    _VRE = _re_eff.compile(r'\b([a-z][a-z0-9_]*)\b')
+    def _eff_count(expr: str) -> int:
+        k = len({m for m in _VRE.findall(expr) if m not in _Z3K and len(m) > 2})
+        return 4 ** min(max(k, 1), 8)
+
+    effective_tests = sum(
+        _eff_count(c.get("expr") or "")
+        for r in all_results
+        for c in r.get("constraints", [])
+        if isinstance(c, dict)
+    )
+    raw_constraint_evals = sum(
+        len(r.get("constraints", []))
+        for r in all_results
+    )
+
     # ── Collect never-exercised constraints across all personas ────────────────
     never_exercised: dict[str, list[str]] = {}
 
@@ -494,6 +516,13 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .summary strong {{ color: var(--text); }}
 .summary .s-pass {{ color: var(--pass); font-weight: 600; }}
 .summary .s-fail {{ color: var(--fail); font-weight: 600; }}
+.summary .s-scenarios {{ color: var(--muted); }}
+.summary .s-people    {{ color: var(--muted); }}
+.summary .s-effective {{
+  color: var(--blue); font-weight: 700; font-size: 13px;
+  margin-top: 4px; cursor: help;
+}}
+.summary .s-eff-sub   {{ font-weight: 400; font-size: 11px; color: var(--muted); }}
 
 /* ── Card layout ─────────────────────────────────────────── */
 .card {{
@@ -730,7 +759,8 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
     <h1>🐉 User Simulation Report</h1>
     <div class="summary">
       <span><strong>{satisfied}</strong> / <strong>{total}</strong> person×scenario checks satisfied ({score:.0%})</span>
-      <span><span class="s-pass">{n_pass} passed</span> &nbsp; <span class="s-fail">{n_fail} failed</span></span>
+      <span><span class="s-pass">{n_pass} passed</span> &nbsp; <span class="s-fail">{n_fail} failed</span> &nbsp; <span class="s-scenarios">{len(scenarios)} scenarios</span> &nbsp; <span class="s-people">{len(persons_ordered)} people</span></span>
+      <span class="s-effective" title="Each constraint with k distinct variables covers 4^k value combinations (domain size 4 per variable). Total: {raw_constraint_evals:,} constraint evaluations × avg 4^k factor = {effective_tests:,} effective tests.">⚡ ~{effective_tests:,} effective tests <span class="s-eff-sub">({raw_constraint_evals} constraint evals × 4^k)</span></span>
       <span><strong>{len(scenarios)}</strong> scenarios &nbsp; <strong>{len(persons_ordered)}</strong> people</span>
     </div>
   </div>
