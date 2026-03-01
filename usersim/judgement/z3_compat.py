@@ -35,6 +35,11 @@ try:
         expr._antecedent = a
         return expr
 
+    def named(label: str, expr):
+        """Attach a human-readable name to any Z3 expression."""
+        expr._repr = label
+        return expr
+
     Z3_REAL = True
 
 except Exception:
@@ -109,6 +114,11 @@ except Exception:
         expr = _Expr(lambda env, _a=a, _b=b: (not bool(_a(env))) or bool(_b(env)),
                      f"If {a}, then {b}")
         expr._antecedent = a
+        return expr
+
+    def named(label: str, expr):
+        """Attach a human-readable name to any expression."""
+        expr._repr = label
         return expr
 
     def If(cond, then, else_):

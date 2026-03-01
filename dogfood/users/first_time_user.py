@@ -1,6 +1,16 @@
 """First-time user evaluating usersim — does this thing actually work?"""
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
 from usersim import Person
-from usersim.judgement.z3_compat import Implies, And, Not
+from usersim.judgement.z3_compat import Implies, And, Not, named
+from constraint_library import (
+    matrix_invariants,
+    pipeline_invariants,
+    timing_invariants,
+    scaffold_invariants,
+    report_invariants,
+)
 
 
 class FirstTimeUser(Person):
@@ -11,50 +21,29 @@ class FirstTimeUser(Person):
 
     def constraints(self, P):
         return [
-            # ── Pipeline: the example must fully pass ─────────────────────
-            Implies(P.pipeline_exit_code >= 0, P.pipeline_exit_code == 0),
-            Not(And(P.pipeline_exit_code == 0, P.results_total == 0)),
-            # Full pass: satisfied == total (100% pass rate, no cross-multiply needed)
-            Implies(P.results_total >= 1, P.results_satisfied == P.results_total),
-            Implies(P.pipeline_exit_code == 0, P.output_is_valid_json),
-            Implies(P.pipeline_exit_code == 0, P.schema_is_correct),
+            *matrix_invariants(P),
+            *pipeline_invariants(P),
+            *timing_invariants(P, max_ms_per_result=5000, max_total_ms=120000),
+            *scaffold_invariants(P),
+            *report_invariants(P),
 
-            # ── Pipeline: matrix must have multiple dimensions ─────────────
-            Implies(P.pipeline_exit_code == 0, P.person_count >= 1),
-            Implies(P.pipeline_exit_code == 0, P.scenario_count >= 1),
-            # Total must reflect the matrix
-            Implies(
-                And(P.pipeline_exit_code == 0, P.person_count >= 1),
-                P.results_total == P.person_count * P.scenario_count,
-            ),
-
-            # ── Timing: must feel snappy; scales with how much was evaluated ─
-            Implies(
-                P.pipeline_wall_clock_ms > 0,
-                P.pipeline_wall_clock_ms <= P.results_total * 5000,
-            ),
-            # Also: time should scale with persons AND scenarios independently
-            Implies(
-                P.pipeline_wall_clock_ms > 0,
-                P.pipeline_wall_clock_ms <= P.person_count * P.scenario_count * 5000,
-            ),
-
-            # ── Init: scaffold must be complete ───────────────────────────
-            Implies(P.init_exit_code >= 0, P.init_exit_code == 0),
-            Implies(P.init_exit_code == 0, P.config_created),
-            Implies(P.init_exit_code == 0, P.yaml_parseable),
-            Implies(P.init_exit_code == 0, P.scaffold_file_count >= 3),
-            # yaml_parseable implies config exists — can't parse what isn't there
-            Implies(P.yaml_parseable, P.config_created),
-
-            # ── Report: must be viewable and proportional to results ───────
-            Implies(P.report_exit_code >= 0, P.report_exit_code == 0),
-            Implies(P.report_exit_code == 0, P.report_file_created),
-            Implies(P.report_file_created, P.report_has_doctype),
-            Implies(P.report_file_created, P.report_is_self_contained),
-            # Report size must grow with matrix: bytes >= total * person_count * 50
-            Implies(
-                And(P.report_file_created, P.results_total >= 1, P.person_count >= 1),
-                P.report_file_size_bytes >= P.results_total * P.person_count * 50,
-            ),
+            # ── First-time-user-specific ──────────────────────────────────
+            # The example must fully pass — proves the tool works end-to-end
+            named("first-time/example-must-fully-pass",
+                  Implies(P.results_total >= 1,
+                          P.results_satisfied == P.results_total)),
+            # Pipeline must exit cleanly
+            named("first-time/pipeline-exits-0",
+                  Implies(P.pipeline_exit_code >= 0, P.pipeline_exit_code == 0)),
+            # Must have evaluated multiple persons and scenarios
+            named("first-time/multiple-persons-evaluated",
+                  Implies(P.pipeline_exit_code == 0, P.person_count >= 1)),
+            named("first-time/multiple-scenarios-evaluated",
+                  Implies(P.pipeline_exit_code == 0, P.scenario_count >= 1)),
+            # Report must succeed
+            named("first-time/report-exits-0",
+                  Implies(P.report_exit_code >= 0, P.report_exit_code == 0)),
+            # Scaffold must exit cleanly
+            named("first-time/scaffold-exits-0",
+                  Implies(P.init_exit_code >= 0, P.init_exit_code == 0)),
         ]
