@@ -639,27 +639,27 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   --mono:       'SF Mono', 'Consolas', 'Menlo', monospace;
 }}
 body.earth {{
-  /* backgrounds: espresso → warm brown → medium brown */
-  --bg:         #1c1710;
-  --card:       #26200e;
-  --card2:      #312a18;
-  --border:     #5a4a30;
-  /* text: warm cream → tan */
-  --text:       #f0e2c4;
-  --fg:         #f0e2c4;
-  --muted:      #a89878;
-  /* semantic colors: 4 distinct earth hues */
-  --pass:       #7aaa4a;   /* sage green  */
-  --fail:       #c45f3a;   /* terracotta  */
-  --blue:       #5a8f7a;   /* dusty teal — headings, labels, links */
-  --orange:     #c4913a;   /* warm amber  — warnings, gaps, partial */
+  /* backgrounds: dark forest floor → moss → bark */
+  --bg:         #1a1f12;
+  --card:       #232b18;
+  --card2:      #2d3820;
+  --border:     #4a5e35;
+  /* text: warm parchment → tan */
+  --text:       #e8dfc0;
+  --fg:         #e8dfc0;
+  --muted:      #8fa870;
+  /* semantic colors: 5 distinct earth hues, all vivid enough to pop on dark green */
+  --pass:       #5ec45e;   /* bright meadow green   */
+  --fail:       #e05c30;   /* fired clay / rust      */
+  --blue:       #6bbfcc;   /* sky through canopy     */
+  --orange:     #e0a030;   /* autumn amber / harvest */
   /* rgb variants for rgba() usage */
-  --pass-rgb:   122,170,74;
-  --fail-rgb:   196,95,58;
-  --orange-rgb: 196,145,58;
-  --accent-rgb: 196,145,58;  /* amber heatmap cells */
-  --sink:       rgba(0,0,0,0.35);
-  --hover-bg:   rgba(255,255,255,0.04);
+  --pass-rgb:   94,196,94;
+  --fail-rgb:   224,92,48;
+  --orange-rgb: 224,160,48;
+  --accent-rgb: 120,180,60;  /* green heatmap cells */
+  --sink:       rgba(0,0,0,0.4);
+  --hover-bg:   rgba(255,255,255,0.05);
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
