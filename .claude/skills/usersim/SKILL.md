@@ -13,6 +13,7 @@
 | Write `perceptions.py` | `.claude/skills/usersim/PERCEPTIONS.md` |
 | Write persona constraint files | `.claude/skills/usersim/CONSTRAINTS.md` |
 | Application runs in a browser | `.claude/skills/usersim/web.md` (replaces INSTRUMENTATION.md) |
+| Reviewing or improving an existing system | `.claude/skills/usersim/MAINTENANCE.md` |
 
 Read the sub-skill **before** writing the code for that layer, not after.
 Each sub-skill is self-contained — you don't need to hold the others in context simultaneously.
