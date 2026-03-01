@@ -328,3 +328,55 @@ of the consequent. This is what appears in the report's constraint list.
 If a scenario never exercises a code path, constraints gated on that path are vacuously true.
 Add a `full_integration` scenario that exercises every subsystem in one pass. This is the
 strongest guarantee against vacuous coverage.
+
+---
+
+## Pre-built Constraint Library (`usersim.constraints`)
+
+A set of reusable named constraint groups for common domains. Import and compose
+in persona `constraints()` methods instead of writing from scratch.
+
+### Quick usage
+
+```python
+from usersim.constraints.reliability import error_rate, latency
+from usersim.judgement.z3_compat import named, Implies
+
+class MyUser:
+    def constraints(self, P):
+        return [
+            *error_rate(P),              # P.error_total * 100 <= P.request_total * 1
+            *latency(P, p99_ms=500),     # P.p99_ms <= 500 + monotonicity
+            named("my/custom",
+                  Implies(P.cache_warm, P.p50_ms <= 50)),
+        ]
+```
+
+### Available modules
+
+| Module | Groups | Key perceptions |
+|--------|--------|-----------------|
+| `reliability` | `error_rate`, `latency`, `availability` | `error_total`, `request_total`, `p50_ms`, `p95_ms`, `p99_ms`, `uptime_pct`, `consecutive_errors` |
+| `throughput` | `throughput_floor`, `queue_depth` | `items_processed`, `items_total`, `elapsed_ms`, `queue_depth`, `worker_count`, `dropped_items` |
+| `search` | `result_count`, `precision`, `recall` | `results_returned`, `results_relevant`, `total_relevant`, `corpus_size`, `top_k` |
+| `retention` | `session_depth`, `return_rate` | `depth_p50`, `depth_p90`, `sessions_total`, `sessions_returned`, `bounce_count` |
+| `privacy` | `data_exposure`, `consent`, `audit_trail` | `pii_fields_exposed`, `pii_fields_total`, `anonymized`, `consent_recorded`, `audit_events_total` |
+| `cli` | `exit_codes`, `output_format`, `timing` | `exit_code`, `stdout_bytes`, `stderr_bytes`, `wall_clock_ms`, `output_valid_json`, `traceback_present` |
+
+### Sentinel convention
+
+All library constraints use `Implies(P.x >= 0, ...)`. If a perception is absent
+from the facts dict, `P.x` returns `IntVal(-1)`, the antecedent is false, and the
+constraint is vacuously true — no crash, no false failure.
+
+This means you can import any group without declaring every perception: only the
+facts you actually measure will activate their constraints.
+
+### Threshold overrides
+
+All groups accept keyword overrides:
+```python
+error_rate(P, max_pct=5)         # 5% instead of 1%
+latency(P, p99_ms=2000)          # 2s instead of 1s
+throughput_floor(P, min_items_per_second=500)
+```
