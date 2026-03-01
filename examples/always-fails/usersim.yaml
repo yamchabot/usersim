@@ -1,0 +1,22 @@
+# always-fails example
+# This project is intentionally broken — used to test that usersim
+# correctly reports failures and produces a valid report.html.
+version: 1
+
+instrumentation: "python3 instrumentation.py"
+perceptions: perceptions.py
+
+users:
+  - users/*.py
+
+scenarios:
+  - name: normal_load
+    description: "20 requests, 8 errors, 4200ms p99 — everything over budget"
+    tags: [smoke]
+  - name: low_load
+    description: "5 requests, 2 errors, 1800ms p99 — still over budget"
+    tags: [smoke]
+
+output:
+  results: results.json
+  report:  report.html
