@@ -16,7 +16,7 @@ from constraint_library import (
 class OSSContributor(Person):
     name    = "oss_contributor"
     role    = "Open Source Contributor"
-    goal    = "add new personas and scenarios without breaking existing ones"
+    goal    = "add new personas and paths without breaking existing ones"
     pronoun = "they"
 
     def constraints(self, P):

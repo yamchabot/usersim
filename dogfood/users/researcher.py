@@ -28,15 +28,15 @@ class Researcher(Person):
             named("formal/satisfied-leq-total",
                   Implies(P.results_total >= 1,
                           P.results_satisfied <= P.results_total)),
-            # Completeness: all persons * all scenarios must be evaluated
+            # Completeness: all persons * all paths must be evaluated
             named("formal/evaluation-is-complete",
                   Implies(P.results_total >= 1,
                           P.results_total == P.person_count * P.scenario_count)),
             # Non-triviality: total must be at least 2 (can't be sound with 1 result)
             named("formal/non-trivial-evaluation",
                   Implies(P.pipeline_exit_code == 0, P.results_total >= 2)),
-            # Person count and scenario count must both be positive
-            named("formal/persons-and-scenarios-positive",
+            # Person count and path count must both be positive
+            named("formal/persons-and-paths-positive",
                   Implies(P.results_total >= 1,
                           And(P.person_count >= 1, P.scenario_count >= 1))),
             # Judge must report the same total as pipeline (no hidden evaluations)

@@ -2,11 +2,11 @@
  * collect.js — Instrumentation runner
  *
  * Loads the Local Notes app in jsdom, injects monitor.js before app code
- * runs, performs a scenario, and prints a usersim.metrics.v1 JSON doc to stdout.
+ * runs, performs a path, and prints a usersim.metrics.v1 JSON doc to stdout.
  *
  * Usage:
- *   node collect.js [scenario]            — explicit scenario
- *   USERSIM_SCENARIO=baseline node collect.js  — via env var (usersim run)
+ *   node collect.js [path]            — explicit path
+ *   USERSIM_PATH=baseline node collect.js  — via env var (usersim run)
  *
  * Swap jsdom for Playwright's page.addInitScript() for real browser testing.
  * monitor.js is identical in both environments.
@@ -14,12 +14,12 @@
 
 const { JSDOM } = require('jsdom');
 const fs   = require('fs');
-const path = require('path');
+const nodePath = require('path');
 
-const APP_HTML  = path.resolve(__dirname, '../../src/index.html');
-const MONITOR_JS = path.resolve(__dirname, 'monitor.js');
+const APP_HTML  = nodePath.resolve(__dirname, '../../src/index.html');
+const MONITOR_JS = nodePath.resolve(__dirname, 'monitor.js');
 
-const scenario = process.argv[2] || process.env.USERSIM_SCENARIO || 'baseline';
+const path = process.argv[2] || process.env.USERSIM_PATH || 'baseline';
 
 // ── Load sources ──────────────────────────────────────────────────────────────
 
@@ -129,7 +129,7 @@ async function runBaseline() {
   const { external_dependency_count, external_resource_count } = countExternalResources();
 
   return {
-    scenario: 'baseline',
+    path: 'baseline',
     // Network
     outbound_request_count:    m.requests.length,
     load_request_count:        m.requests.length,
@@ -197,7 +197,7 @@ async function runCapturePath() {
   const autosaveLatency = noteWrite ? noteWrite.ts - tKeyStroke : -1;
 
   return {
-    scenario: 'capture_path',
+    path: 'capture_path',
     new_note_step_count:        m.interactions,
     time_to_first_keystroke_ms: tKeyStroke - t0,
     autosave_latency_ms:        autosaveLatency,
@@ -241,7 +241,7 @@ async function runPersistence() {
   const notebooksAfterReload = readNotebooks(ls).length;
 
   return {
-    scenario: 'persistence',
+    path: 'persistence',
     notebooks_before_reload: notebooksBeforeReload,
     notebooks_after_reload:  notebooksAfterReload,
     notes_before_reload:     notesBeforeReload,
@@ -306,7 +306,7 @@ async function runIsolation() {
   });
 
   return {
-    scenario: 'isolation',
+    path: 'isolation',
     notebook_count:            notebookIds.length,
     notebook_key_count:        noteKeys.length,
     shared_notebook_key_count: sharedCount,
@@ -350,7 +350,7 @@ async function runSortOrder() {
   const violations = expected.filter((e, i) => rendered[i] !== e).length;
 
   return {
-    scenario: 'sort_order',
+    path: 'sort_order',
     rendered_order:          rendered,
     expected_order:          expected,
     recency_violation_count: violations,
@@ -407,7 +407,7 @@ async function runOffline() {
   await attempt('zero requests', async () => m.requests.length === 0);
 
   return {
-    scenario: 'offline',
+    path: 'offline',
     offline_failure_count: failures,
     outbound_request_count: m.requests.length,
   };
@@ -452,7 +452,7 @@ async function runContextSwitch() {
   const switched  = Array.from(noteItems).some(el => el.textContent.includes('Beta note'));
 
   return {
-    scenario: 'context_switch',
+    path: 'context_switch',
     notebook_switch_time_ms: switched ? (t1 - t0) : -1,
   };
 }
@@ -516,7 +516,7 @@ async function runSearchHeavy() {
   const total_note_count = countAllNotes(ls);
 
   return {
-    scenario: 'search_heavy',
+    path: 'search_heavy',
     total_note_count,
     search_hit_count,
     search_miss_count,
@@ -578,7 +578,7 @@ async function runBulkImport() {
   const notes_after_reload = countAllNotes(localStorageShim);
 
   return {
-    scenario: 'bulk_import',
+    path: 'bulk_import',
     session_note_create_count:  created_count,
     notes_before_reload:        notes_in_storage,
     notes_after_reload:         notes_after_reload,
@@ -596,7 +596,7 @@ async function runBulkImport() {
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const scenarios = {
+const paths = {
   baseline:       runBaseline,
   capture_path:   runCapturePath,
   persistence:    runPersistence,
@@ -608,22 +608,22 @@ const scenarios = {
   bulk_import:    runBulkImport,
 };
 
-const runner = scenarios[scenario];
+const runner = paths[path];
 if (!runner) {
-  process.stderr.write(`[collect] unknown scenario: ${scenario}\nAvailable: ${Object.keys(scenarios).join(', ')}\n`);
+  process.stderr.write(`[collect] unknown path: ${path}\nAvailable: ${Object.keys(paths).join(', ')}\n`);
   process.exit(1);
 }
 
 runner()
   .then(metrics => {
-    const { scenario: _s, ...rest } = metrics;
+    const { path: _s, ...rest } = metrics;
     process.stdout.write(JSON.stringify({
       schema:   'usersim.metrics.v1',
-      scenario: _s || scenario,
+      path: _s || path,
       metrics:  rest,
     }, null, 2) + '\n');
   })
   .catch(err => {
-    process.stderr.write(`[collect] error in ${scenario}: ${err.message}\n${err.stack}\n`);
+    process.stderr.write(`[collect] error in ${path}: ${err.message}\n${err.stack}\n`);
     process.exit(1);
   });

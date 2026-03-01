@@ -41,7 +41,7 @@ Implies(P.results_total >= 1, P.results_satisfied == P.results_total)
 This is better because:
 - Z3 reasons about the *relationship* between two quantities across all observed combos
 - The constraint is transparent in the report (the formula shows what's being checked)
-- Adding scenarios automatically re-evaluates the relationship with new values
+- Adding paths automatically re-evaluates the relationship with new values
 
 Any time you write a division or a boolean comparison in perceptions, ask: *can Z3 express
 this relationship directly from the two raw values?* If yes, pass both raw values instead.
@@ -59,7 +59,7 @@ this relationship directly from the two raw values?* If yes, pass both raw value
 
 # Availability guard: handle missing metrics cleanly
 "scaffold_file_count":     get("file_count", default=-1),
-# -1 signals "not measured in this scenario"; Z3 constraint gates on >= 0
+# -1 signals "not measured in this path"; Z3 constraint gates on >= 0
 ```
 
 ---
@@ -69,13 +69,13 @@ this relationship directly from the two raw values?* If yes, pass both raw value
 ```python
 # perceptions.py
 
-def compute(metrics, scenario=None, person=None):
+def compute(metrics, path=None, person=None):
     """
     Transform raw instrumentation metrics into Z3-ready signals.
 
     Args:
         metrics:  flat dict from instrumentation output
-        scenario: scenario name (available for conditional logic if truly needed)
+        path: path name (available for conditional logic if truly needed)
         person:   persona name (rarely needed)
 
     Returns:
@@ -100,7 +100,7 @@ def compute(metrics, scenario=None, person=None):
         "output_is_valid_json":    get("valid_json"),
         "schema_is_correct":       get("schema_correct"),
 
-        # Error paths (use -1 as sentinel: "not observed in this scenario")
+        # Error paths (use -1 as sentinel: "not observed in this path")
         "bad_config_exit_code":    get("bad_config_exit_code", default=-1),
         "missing_users_exit_code": get("missing_users_exit_code", default=-1),
 
@@ -119,20 +119,20 @@ def compute(metrics, scenario=None, person=None):
 
 ## Sentinel values for unobserved metrics
 
-When a metric is only measured in some scenarios (e.g., `bad_config_exit_code` is only
-populated in error scenarios), use `-1` as the sentinel and gate Z3 constraints on `>= 0`:
+When a metric is only measured in some paths (e.g., `bad_config_exit_code` is only
+populated in error paths), use `-1` as the sentinel and gate Z3 constraints on `>= 0`:
 
 ```python
 # perceptions.py
 "bad_config_exit_code": get("bad_config_exit_code", default=-1),
 
-# constraint_library.py — only fires when the scenario measured it
+# constraint_library.py — only fires when the path measured it
 named("errors/bad-config-exits-1",
       Implies(P.bad_config_exit_code >= 0, P.bad_config_exit_code == 1))
 ```
 
-This pattern prevents vacuous constraints without requiring every scenario to measure
-every metric. The `full_integration` scenario should populate all sentinels.
+This pattern prevents vacuous constraints without requiring every path to measure
+every metric. The `full_integration` path should populate all sentinels.
 
 Do **not** use `0` as a sentinel — `0` is a valid exit code (success). `-1` is unambiguous.
 
@@ -219,7 +219,7 @@ not encode a judgement:
 
 ## Checking your perceptions
 
-Before writing any Z3 constraints, print the actual perception values for each scenario:
+Before writing any Z3 constraints, print the actual perception values for each path:
 
 ```python
 # quick_check.py
@@ -227,15 +227,15 @@ import subprocess, json, sys
 sys.path.insert(0, '.')
 import perceptions
 
-for scenario in ["normal_run", "bad_config", "full_integration"]:
+for path in ["normal_run", "bad_config", "full_integration"]:
     result = subprocess.run(
         ["python3", "instrumentation.py"],
-        env={**__import__('os').environ, "USERSIM_SCENARIO": scenario},
+        env={**__import__('os').environ, "USERSIM_PATH": path},
         capture_output=True, text=True
     )
     raw = json.loads(result.stdout)
-    p = perceptions.compute(raw["metrics"], scenario=scenario)
-    print(f"\n--- {scenario} ---")
+    p = perceptions.compute(raw["metrics"], path=path)
+    print(f"\n--- {path} ---")
     for k, v in sorted(p.items()):
         print(f"  {k}: {v}")
 ```

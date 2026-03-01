@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "usersim run"
+            "command": "usersim run --config dogfood/usersim.yaml"
           }
         ]
       }

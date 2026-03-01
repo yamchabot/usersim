@@ -35,7 +35,7 @@ def run_audit(results: dict, config: dict | None = None) -> dict:
     raw_results   = results.get("results", [])
     summary       = results.get("summary", {})
     all_persons   = sorted({x["person"]   for x in raw_results})
-    all_scenarios = sorted({x["scenario"] for x in raw_results})
+    all_scenarios = sorted({x["path"] for x in raw_results})
 
     # ── 1. Vacuous constraints ────────────────────────────────────────────────
     label_ever_fired: dict[str, dict[str, bool]] = defaultdict(lambda: defaultdict(bool))
@@ -120,7 +120,7 @@ def run_audit(results: dict, config: dict | None = None) -> dict:
 
     return {
         "persons":   all_persons,
-        "scenarios": all_scenarios,
+        "paths": all_scenarios,
         "summary": {
             "effective_tests":  summary.get("effective_tests", 0),
             "constraint_evals": summary.get("constraint_evals", 0),
@@ -179,7 +179,7 @@ def print_audit(audit: dict, file=None) -> None:
 
     s = audit["summary"]
     print(f"\n=== usersim constraint audit ===", file=f)
-    print(f"Persons: {len(audit['persons'])}  Scenarios: {len(audit['scenarios'])}", file=f)
+    print(f"Persons: {len(audit['persons'])}  Scenarios: {len(audit['paths'])}", file=f)
     print(f"Effective tests:  {s['effective_tests']:,}", file=f)
     print(f"Constraint evals: {s['constraint_evals']:,}", file=f)
     print(f"Pass rate:        {s['satisfied']}/{s['total']}", file=f)
@@ -201,12 +201,12 @@ def print_audit(audit: dict, file=None) -> None:
         if len(audit["always_passing"]) > 20:
             print(f"  ... and {len(audit['always_passing']) - 20} more", file=f)
     else:
-        print("  none (every constraint has at least one failure scenario)", file=f)
+        print("  none (every constraint has at least one failure path)", file=f)
 
     # 3. Counts per persona
     print(f"\n--- Constraint count per persona ---", file=f)
     for row in audit["counts_per_persona"]:
-        print(f"  {row['person']:<30} {row['avg_constraints']:>5} constraints/scenario", file=f)
+        print(f"  {row['person']:<30} {row['avg_constraints']:>5} constraints/path", file=f)
 
     # 4. Variable density
     print(f"\n--- Most variable coverage (top 10) ---", file=f)

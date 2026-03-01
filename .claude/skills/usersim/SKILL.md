@@ -23,11 +23,11 @@ Each sub-skill is self-contained — you don't need to hold the others in contex
 ## What usersim is
 
 usersim is a **coverage engine**. It answers: for every type of person who uses this system,
-across every scenario it can be in, do the things that person care about hold true?
+across every path it can be in, do the things that person care about hold true?
 
-The combinatorial power is Z3. A constraint `wall_ms <= persons * scenarios * 3000` isn't
+The combinatorial power is Z3. A constraint `wall_ms <= persons * paths * 3000` isn't
 one test — it's satisfiability over the full domain of those variables. 15 personas × 6
-scenarios × ~50 constraints × avg 3 variables ≈ 86,000 effective test assertions from a
+paths × ~50 constraints × avg 3 variables ≈ 86,000 effective test assertions from a
 single run. Not test count. **Coverage of relationships.**
 
 ### The three layers
@@ -189,7 +189,7 @@ perceptions: user_simulation/perceptions.py
 users:
   - user_simulation/users/*.py
 
-scenarios:
+paths:
   - name: normal_run
     description: "Full pipeline on example input — verifies end-to-end output"
   - name: bad_config
@@ -217,7 +217,7 @@ python3 -c "import json; print(json.load(open('user_simulation/results.json'))['
 python3 -c "
 import json
 r = json.load(open('user_simulation/results.json'))
-vac = [(x['person'], x['scenario'], c['label'])
+vac = [(x['person'], x['path'], c['label'])
        for x in r['results']
        for c in x.get('constraints', [])
        if c.get('antecedent_fired') is False]
@@ -243,7 +243,7 @@ my-project/
     users/
       <persona_name>.py             ← one per persona
     constraint_library.py           ← shared constraint groups
-    instrumentation.py              ← scenario runner (or collect.js for web)
+    instrumentation.py              ← path runner (or collect.js for web)
     perceptions.py                  ← signal computation
     results.json                    ← gitignore
     report.html                     ← gitignore

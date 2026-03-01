@@ -9,7 +9,7 @@ perceptions: user_simulation/perceptions.py
 users:
   - user_simulation/users/*.py
 
-scenarios:
+paths:
   - name: baseline
     description: "Fresh load, no existing data — measures friction to first interaction"
   - name: capture_path

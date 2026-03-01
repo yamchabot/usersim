@@ -29,7 +29,7 @@ class SREEngineer(Person):
             # Pipeline must exit 0 — no silent partial failures
             named("sre/pipeline-exit-zero",
                   Implies(P.pipeline_exit_code >= 0, P.pipeline_exit_code == 0)),
-            # Timing must scale sub-linearly: wall_ms <= person * scenario * 1500
+            # Timing must scale sub-linearly: wall_ms <= person * path * 1500
             named("sre/timing-scales-with-matrix",
                   Implies(P.pipeline_wall_clock_ms > 0,
                           P.pipeline_wall_clock_ms

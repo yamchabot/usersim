@@ -4,9 +4,9 @@ usersim CLI
 Primary usage — driven by usersim.yaml config file:
 
     usersim run                        # LLM-readable narrative output (default)
-    usersim run --matrix               # also print scenario×person grid
+    usersim run --matrix               # also print path×person grid
     usersim run --config path/to/usersim.yaml  # explicit config
-    usersim run --scenario peak_load   # run one specific scenario
+    usersim run --path peak_load   # run one specific path
     usersim run --out results.json     # save results to file (also stdout)
 
 Add `usersim run` to your Makefile, npm scripts, pyproject.toml, Bazel rules,
@@ -20,7 +20,7 @@ Other subcommands (for one-off use, no config needed):
     usersim judge --perceptions-dir perc/ ... # matrix mode
     usersim report --results results.json     # generate HTML report
     usersim audit --results results.json      # constraint health analysis
-    usersim calibrate                         # print perception values per scenario
+    usersim calibrate                         # print perception values per path
     usersim init [DIR]                        # scaffold a new project
 """
 
@@ -35,14 +35,14 @@ def cmd_run(args):
     Run the full pipeline as declared in usersim.yaml.
 
     Reads the config file, runs instrumentation + perceptions + judgement
-    for each scenario, writes results to stdout (or --out file).
+    for each path, writes results to stdout (or --out file).
     """
     from usersim.runner import run_from_config
 
     try:
         results = run_from_config(
             config=args.config,
-            scenario_override=args.scenario or None,
+            path_override=args.path or None,
             output_path=args.out,
             verbose=args.verbose,
             tags=args.tags or None,
@@ -151,7 +151,7 @@ def cmd_audit(args):
 
 
 def cmd_calibrate(args):
-    """Print actual perception values per scenario for threshold calibration."""
+    """Print actual perception values per path for threshold calibration."""
     from usersim.runner import load_config
     from usersim.calibrate import run_calibrate
 
@@ -161,7 +161,7 @@ def cmd_calibrate(args):
         print(f"error: {e}", file=sys.stderr)
         return 1
 
-    return run_calibrate(config, scenario_override=args.scenario or None)
+    return run_calibrate(config, path_override=args.path or None)
 
 
 def _print_summary(results: dict, file=sys.stderr) -> None:
@@ -173,11 +173,11 @@ def _print_summary(results: dict, file=sys.stderr) -> None:
 
     if "matrix" in schema:
         persons   = sorted({r["person"]   for r in results.get("results", [])})
-        scenarios = sorted({r["scenario"] for r in results.get("results", [])})
-        result_map = {(r["person"], r["scenario"]): r for r in results.get("results", [])}
+        paths = sorted({r["path"] for r in results.get("results", [])})
+        result_map = {(r["person"], r["path"]): r for r in results.get("results", [])}
 
-        # Scenarios as rows, persons as columns (fewer persons than scenarios)
-        row_w = max((len(s) for s in scenarios), default=8)
+        # Scenarios as rows, persons as columns (fewer persons than paths)
+        row_w = max((len(s) for s in paths), default=8)
         col_w = max((len(p) for p in persons),   default=6) + 2
 
         # Header: person names
@@ -187,8 +187,8 @@ def _print_summary(results: dict, file=sys.stderr) -> None:
         print(file=file)
         print("─" * (row_w + (col_w + 2) * len(persons)), file=file)
 
-        # One row per scenario
-        for s in scenarios:
+        # One row per path
+        for s in paths:
             print(f"  {s:<{row_w}}", end="", file=file)
             for p in persons:
                 r = result_map.get((p, s))
@@ -214,7 +214,7 @@ def _print_narrative(results: dict, file=sys.stdout) -> None:
 
     Format is designed to be unambiguous for AI coding agents:
     each block explains who is unhappy, what they want, which constraints
-    failed, and in which scenarios — so the agent knows exactly what to fix.
+    failed, and in which paths — so the agent knows exactly what to fix.
     """
     all_results = results.get("results", [])
     schema      = results.get("schema", "")
@@ -237,7 +237,7 @@ def _print_narrative(results: dict, file=sys.stdout) -> None:
 
     if not any_failure:
         total = results.get("summary", {}).get("total", 0)
-        print(f"\nALL CHECKS PASSED ({total} person×scenario checks satisfied).\n", file=file)
+        print(f"\nALL CHECKS PASSED ({total} person×path checks satisfied).\n", file=file)
         return
 
     print("\n" + "=" * 60, file=file)
@@ -262,7 +262,7 @@ def _print_narrative(results: dict, file=sys.stdout) -> None:
         Pro     = pro.capitalize()
         sv      = "" if pro == "they" else "s"
 
-        # Deduplicate violations across scenarios
+        # Deduplicate violations across paths
         seen_viols: set[str] = set()
         violations: list[str] = []
         for r in failing:
@@ -271,7 +271,7 @@ def _print_narrative(results: dict, file=sys.stdout) -> None:
                     seen_viols.add(v)
                     violations.append(v)
 
-        failing_scenarios = [r["scenario"] for r in failing]
+        failing_scenarios = [r["path"] for r in failing]
         goal_lc = goal[0].lower() + goal[1:] if goal else "accomplish their goal"
 
         print(f"❌ {person_name} ({role})", file=file)
@@ -285,7 +285,7 @@ def _print_narrative(results: dict, file=sys.stdout) -> None:
             print(f"   (constraints not available — check formula)", file=file)
 
         if "matrix" in schema:
-            print(f"   Failing scenarios: {', '.join(failing_scenarios)}", file=file)
+            print(f"   Failing paths: {', '.join(failing_scenarios)}", file=file)
 
         print(file=file)
 
@@ -319,19 +319,19 @@ def main(argv=None):
         help="Config file (default: usersim.yaml in current directory)",
     )
     p_run.add_argument(
-        "--scenario", metavar="NAME",
-        help="Run a single scenario by name (overrides config scenarios list)",
+        "--path", metavar="NAME",
+        help="Run a single path by name (overrides config paths list)",
     )
     p_run.add_argument(
         "--out", metavar="FILE",
         help="Save results JSON here (also written to stdout)",
     )
     p_run.add_argument("--quiet",   action="store_true", help="Suppress all human output")
-    p_run.add_argument("--matrix", action="store_true", help="Print scenario×person grid (token-heavy; not for LLM pipelines)")
+    p_run.add_argument("--matrix", action="store_true", help="Print path×person grid (token-heavy; not for LLM pipelines)")
     p_run.add_argument("--verbose", action="store_true", help="Print stage info to stderr")
     p_run.add_argument(
         "--tags", metavar="TAG", nargs="+",
-        help="Only run scenarios with at least one matching tag (e.g. --tags continuous)",
+        help="Only run paths with at least one matching tag (e.g. --tags continuous)",
     )
     p_run.set_defaults(func=cmd_run)
 
@@ -398,9 +398,9 @@ def main(argv=None):
     # ── calibrate ─────────────────────────────────────────────────────────────
     p_cal = sub.add_parser(
         "calibrate",
-        help="Print actual perception values per scenario for threshold calibration",
+        help="Print actual perception values per path for threshold calibration",
         description=(
-            "Runs instrumentation + perceptions for each scenario and prints the\n"
+            "Runs instrumentation + perceptions for each path and prints the\n"
             "perception dict.  Use this to set constraint thresholds at realistic values."
         ),
     )
@@ -409,8 +409,8 @@ def main(argv=None):
         help="Config file (default: usersim.yaml)",
     )
     p_cal.add_argument(
-        "--scenario", metavar="NAME",
-        help="Run a single scenario only",
+        "--path", metavar="NAME",
+        help="Run a single path only",
     )
     p_cal.set_defaults(func=cmd_calibrate)
 

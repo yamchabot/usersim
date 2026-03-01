@@ -26,18 +26,18 @@ from usersim.judgement.z3_compat import Implies, And, Not, named
 # ── Matrix ────────────────────────────────────────────────────────────────────
 
 def matrix_invariants(P):
-    """Structural invariants for the person × scenario result matrix."""
+    """Structural invariants for the person × path result matrix."""
     return [
-        named("matrix/total-equals-persons-times-scenarios",
+        named("matrix/total-equals-persons-times-paths",
               Implies(P.results_total >= 1,
                       P.results_total == P.person_count * P.scenario_count)),
         named("matrix/no-results-without-persons",
               Not(And(P.results_total >= 1, P.person_count == 0))),
-        named("matrix/no-results-without-scenarios",
+        named("matrix/no-results-without-paths",
               Not(And(P.results_total >= 1, P.scenario_count == 0))),
         named("matrix/total-implies-at-least-one-person",
               Implies(P.results_total >= 1, P.person_count >= 1)),
-        named("matrix/total-implies-at-least-one-scenario",
+        named("matrix/total-implies-at-least-one-path",
               Implies(P.results_total >= 1, P.scenario_count >= 1)),
         named("matrix/satisfied-never-exceeds-total",
               Implies(P.results_total >= 1, P.results_satisfied <= P.results_total)),
@@ -84,7 +84,7 @@ def timing_invariants(P, max_ms_per_result=3000, max_total_ms=60000):
         named("timing/hard-ceiling",
               Implies(P.pipeline_wall_clock_ms > 0,
                       P.pipeline_wall_clock_ms <= max_total_ms)),
-        named("timing/floor-at-least-10ms-per-scenario",
+        named("timing/floor-at-least-10ms-per-path",
               Implies(P.pipeline_wall_clock_ms > 0,
                       P.pipeline_wall_clock_ms >= P.scenario_count * 10)),
         named("timing/non-zero-when-results-exist",

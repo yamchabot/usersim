@@ -9,7 +9,7 @@ perceptions: perceptions.py
 users:
   - users/*.py
 
-scenarios:
+paths:
   - name: normal_load
     description: "20 requests, 8 errors, 4200ms p99 — everything over budget"
     tags: [smoke]

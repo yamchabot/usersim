@@ -7,7 +7,7 @@ and produces a valid report.html for the failing case.
 """
 import json, sys, os
 
-SCENARIO = os.environ.get("USERSIM_SCENARIO", "normal_load")
+SCENARIO = os.environ.get("USERSIM_PATH", "normal_load")
 
 DATA = {
     "normal_load": {
@@ -25,4 +25,4 @@ DATA = {
 }
 
 metrics = DATA.get(SCENARIO, DATA["normal_load"])
-json.dump({"schema": "usersim.metrics.v1", "scenario": SCENARIO, "metrics": metrics}, sys.stdout)
+json.dump({"schema": "usersim.metrics.v1", "path": SCENARIO, "metrics": metrics}, sys.stdout)

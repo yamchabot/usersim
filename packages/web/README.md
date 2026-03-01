@@ -2,8 +2,8 @@
 
 Browser instrumentation helpers for [usersim](https://github.com/yamchabot/usersim).
 
-Handles browser lifecycle, scenario dispatch, and `usersim.metrics.v1` output.
-You write the scenario logic and data extraction — this handles everything else.
+Handles browser lifecycle, path dispatch, and `usersim.metrics.v1` output.
+You write the path logic and data extraction — this handles everything else.
 
 ---
 
@@ -29,15 +29,15 @@ Force a specific backend with the `backend` option.
 
 ```js
 // collect.js
-import { createRunner } from 'usersim-web';
+import { createCollector } from 'usersim-web';
 
-const runner = createRunner({
+const runner = createCollector({
   url:      'http://localhost:8000',
-  scenario: process.env.USERSIM_SCENARIO,  // set by usersim runner automatically
+  path: process.env.USERSIM_PATH,  // set by usersim runner automatically
   // backend: 'playwright',               // or 'jsdom' — default: auto
 });
 
-runner.scenario('baseline', async ({ page }) => {
+collector.path('baseline', async ({ page }) => {
   await page.click('#add-habit');
   await page.fill('#habit-name', 'Exercise');
   await page.click('#save');
@@ -55,7 +55,7 @@ runner.scenario('baseline', async ({ page }) => {
   };
 });
 
-runner.scenario('persistence', async ({ page, reload }) => {
+collector.path('persistence', async ({ page, reload }) => {
   await page.click('#add-habit');
   await page.fill('#habit-name', 'Exercise');
   await page.click('#save');
@@ -81,17 +81,17 @@ runner.scenario('persistence', async ({ page, reload }) => {
 runner.run();
 ```
 
-Run a specific scenario:
+Run a specific path:
 ```bash
-USERSIM_SCENARIO=baseline node collect.js
-USERSIM_SCENARIO=persistence node collect.js
+USERSIM_PATH=baseline node collect.js
+USERSIM_PATH=persistence node collect.js
 ```
 
 Output (written to stdout):
 ```json
 {
   "schema":   "usersim.metrics.v1",
-  "scenario": "baseline",
+  "path": "baseline",
   "metrics": {
     "habit_count": 1,
     "habits_in_storage": 1
@@ -104,7 +104,7 @@ Output (written to stdout):
 ## Injecting monitoring hooks
 
 Use `runner.inject(code)` to run JavaScript before the application code on every page load,
-including after `reload()`. Write whatever monitoring logic your scenario needs.
+including after `reload()`. Write whatever monitoring logic your path needs.
 
 ```js
 runner.inject(`
@@ -123,7 +123,7 @@ runner.inject(`
   };
 `);
 
-runner.scenario('baseline', async ({ page }) => {
+collector.path('baseline', async ({ page }) => {
   // ... actions ...
 
   const mon = await page.evaluate(() => window.__monitor);
@@ -138,35 +138,35 @@ runner.scenario('baseline', async ({ page }) => {
 
 ## API
 
-### `createRunner(options)` → `ScenarioRunner`
+### `createCollector(options)` → `ScenarioRunner`
 
 | Option     | Type     | Default  | Description                              |
 |------------|----------|----------|------------------------------------------|
 | `url`      | `string` | required | URL to navigate to                       |
-| `scenario` | `string` | env/argv | Scenario name (overrides auto-detection) |
+| `path` | `string` | env/argv | Scenario name (overrides auto-detection) |
 | `backend`  | `string` | `'auto'` | `'playwright'`, `'jsdom'`, or `'auto'`   |
 
-### `runner.scenario(name, fn)` → `runner`
+### `collector.path(name, fn)` → `runner`
 
-Register a scenario. `fn` receives `{ page, reload }`:
+Register a path. `fn` receives `{ page, reload }`:
 - **`page`** — Playwright `Page` object (or jsdom wrapper, see below)
 - **`reload()`** — returns a new `page` with the same storage state
 
 ### `runner.inject(code)` → `runner`
 
 Inject a JavaScript string to execute before the app on every page load.
-Called before `runner.scenario()` or after — order doesn't matter.
+Called before `collector.path()` or after — order doesn't matter.
 
 ### `runner.run()`
 
-Dispatch the active scenario and write `usersim.metrics.v1` JSON to stdout.
+Dispatch the active path and write `usersim.metrics.v1` JSON to stdout.
 
 ---
 
 ## jsdom page API
 
 When using the jsdom backend, `page` is a wrapper that implements a subset of
-the Playwright Page API. The same scenario code works on both backends for
+the Playwright Page API. The same path code works on both backends for
 common operations:
 
 | Method                             | Description                              |
@@ -195,5 +195,5 @@ For anything not in this list, use `page.evaluate()` to access the DOM directly.
 | API surface | Full Playwright | Subset (see above) |
 | Setup | `npm i playwright && npx playwright install chromium` | `npm i jsdom` |
 
-Use Playwright when your scenario depends on real rendering or browser APIs.
+Use Playwright when your path depends on real rendering or browser APIs.
 Use jsdom when you're in a constrained environment and your app doesn't need layout.

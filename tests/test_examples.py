@@ -86,7 +86,7 @@ class TestLocalNotesExample:
     EXAMPLE  = EXAMPLES_DIR / "local-notes"
     RESULTS  = "user_simulation/results.json"
     REPORT   = "user_simulation/report.html"
-    SCENARIOS = ["baseline", "capture_path", "persistence",
+    PATHS = ["baseline", "capture_path", "persistence",
                  "isolation", "sort_order", "offline", "context_switch",
                  "search_heavy", "bulk_import"]
     PERSONAS  = 5   # number of user files in users/
@@ -118,8 +118,8 @@ class TestLocalNotesExample:
         assert s["satisfied"] == s["total"]
 
     def test_all_scenarios_present(self, results):
-        found = {r["scenario"] for r in results["results"]}
-        assert set(self.SCENARIOS) == found
+        found = {r["path"] for r in results["results"]}
+        assert set(self.PATHS) == found
 
     def test_all_personas_present(self, results):
         persons = {r["person"] for r in results["results"]}
@@ -128,13 +128,13 @@ class TestLocalNotesExample:
     def test_every_result_satisfied(self, results):
         failures = [r for r in results["results"] if not r["satisfied"]]
         assert failures == [], \
-            f"Unsatisfied results: {[(r['person'], r['scenario']) for r in failures]}"
+            f"Unsatisfied results: {[(r['person'], r['path']) for r in failures]}"
 
     def test_every_result_has_constraints(self, results):
         for r in results["results"]:
             assert isinstance(r.get("constraints"), list)
             assert len(r["constraints"]) > 0, \
-                f"No constraints for {r['person']} / {r['scenario']}"
+                f"No constraints for {r['person']} / {r['path']}"
 
     def test_report_html_written(self):
         report = self.EXAMPLE / self.REPORT
@@ -145,7 +145,7 @@ class TestLocalNotesExample:
         """Regression: balls must carry data-constraints for click-to-detail."""
         html = (self.EXAMPLE / self.REPORT).read_text()
         assert 'data-constraints=' in html
-        assert 'data-scenario-name=' in html
+        assert 'data-path-name=' in html
 
 
 # ── data-processor ────────────────────────────────────────────────────────────
@@ -154,7 +154,7 @@ class TestDataProcessorExample:
     EXAMPLE   = EXAMPLES_DIR / "data-processor"
     RESULTS   = "usersim/results.json"
     REPORT    = "usersim/report.html"
-    SCENARIOS = ["small", "medium", "large", "empty", "errors", "concurrent"]
+    PATHS = ["small", "medium", "large", "empty", "errors", "concurrent"]
 
     @pytest.fixture(scope="class")
     def run_result(self):
@@ -183,19 +183,19 @@ class TestDataProcessorExample:
         assert s["satisfied"] == s["total"]
 
     def test_all_scenarios_present(self, results):
-        found = {r["scenario"] for r in results["results"]}
-        assert set(self.SCENARIOS) == found
+        found = {r["path"] for r in results["results"]}
+        assert set(self.PATHS) == found
 
     def test_every_result_satisfied(self, results):
         failures = [r for r in results["results"] if not r["satisfied"]]
         assert failures == [], \
-            f"Unsatisfied results: {[(r['person'], r['scenario']) for r in failures]}"
+            f"Unsatisfied results: {[(r['person'], r['path']) for r in failures]}"
 
     def test_every_result_has_constraints(self, results):
         for r in results["results"]:
             assert isinstance(r.get("constraints"), list)
             assert len(r["constraints"]) > 0, \
-                f"No constraints for {r['person']} / {r['scenario']}"
+                f"No constraints for {r['person']} / {r['path']}"
 
     def test_report_html_written(self):
         report = self.EXAMPLE / self.REPORT
@@ -205,7 +205,7 @@ class TestDataProcessorExample:
     def test_report_html_has_scenario_data(self):
         html = (self.EXAMPLE / self.REPORT).read_text()
         assert 'data-constraints=' in html
-        assert 'data-scenario-name=' in html
+        assert 'data-path-name=' in html
 
 
 # ── dogfood ───────────────────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ class TestDogfood:
     ROOT      = DOGFOOD_DIR.parent   # where usersim.yaml lives
     RESULTS   = "results.json"
     REPORT    = "report.html"
-    SCENARIOS = [
+    PATHS = [
         "data_processor_example",
         "scaffold_and_validate",
         "bad_config",
@@ -254,8 +254,8 @@ class TestDogfood:
         assert {"total", "satisfied", "score"} <= s.keys()
 
     def test_all_scenarios_present(self, results):
-        found = {r["scenario"] for r in results["results"]}
-        assert set(self.SCENARIOS) == found
+        found = {r["path"] for r in results["results"]}
+        assert set(self.PATHS) == found
 
     def test_all_personas_present(self, results):
         persons = {r["person"] for r in results["results"]}
@@ -265,20 +265,20 @@ class TestDogfood:
     def test_every_result_satisfied(self, results):
         failures = [r for r in results["results"] if not r["satisfied"]]
         assert failures == [], \
-            f"Unsatisfied: {[(r['person'], r['scenario']) for r in failures]}"
+            f"Unsatisfied: {[(r['person'], r['path']) for r in failures]}"
 
     def test_every_result_has_constraints(self, results):
         for r in results["results"]:
             assert isinstance(r.get("constraints"), list)
             assert len(r["constraints"]) > 0, \
-                f"No constraints for {r['person']} / {r['scenario']}"
+                f"No constraints for {r['person']} / {r['path']}"
 
     def test_zero_vacuous_constraints(self, results):
-        """full_integration scenario must fire every antecedent."""
+        """full_integration path must fire every antecedent."""
         vacuous = [
             (r["person"], c["label"])
             for r in results["results"]
-            if r["scenario"] == "full_integration"
+            if r["path"] == "full_integration"
             for c in r.get("constraints", [])
             if c.get("antecedent_fired") is False
         ]
@@ -298,7 +298,7 @@ class TestDogfood:
     def test_report_html_has_scenario_data(self):
         html = (self.EXAMPLE / self.REPORT).read_text()
         assert 'data-constraints=' in html
-        assert 'data-scenario-name=' in html
+        assert 'data-path-name=' in html
 
 
 # ── always-fails example ──────────────────────────────────────────────────────
@@ -312,7 +312,7 @@ class TestAlwaysFailsExample:
     EXAMPLE   = EXAMPLES_DIR / "always-fails"
     RESULTS   = "results.json"
     REPORT    = "report.html"
-    SCENARIOS = ["normal_load", "low_load"]
+    PATHS = ["normal_load", "low_load"]
     PERSONAS  = 1
     EXPECTED_FAILING_CONSTRAINTS = {
         "reliability/error-rate-under-10pct",
@@ -341,18 +341,18 @@ class TestAlwaysFailsExample:
         assert results.get("schema") == "usersim.matrix.v1"
 
     def test_all_scenarios_present(self, results):
-        found = {r["scenario"] for r in results["results"]}
-        assert set(self.SCENARIOS) == found
+        found = {r["path"] for r in results["results"]}
+        assert set(self.PATHS) == found
 
     def test_all_personas_present(self, results):
         persons = {r["person"] for r in results["results"]}
         assert len(persons) == self.PERSONAS
 
     def test_all_results_unsatisfied(self, results):
-        """Every persona×scenario must fail — this is an always-fails example."""
+        """Every persona×path must fail — this is an always-fails example."""
         passing = [r for r in results["results"] if r["satisfied"]]
         assert passing == [], \
-            f"Expected all results to fail, but these passed: {[(r['person'], r['scenario']) for r in passing]}"
+            f"Expected all results to fail, but these passed: {[(r['person'], r['path']) for r in passing]}"
 
     def test_expected_constraints_fail(self, results):
         """Spot-check that the right constraint names appear as failures."""
@@ -385,5 +385,5 @@ class TestAlwaysFailsExample:
 
     def test_report_html_shows_both_scenarios(self, run_result):
         html = (self.EXAMPLE / self.REPORT).read_text()
-        for scenario in self.SCENARIOS:
-            assert scenario in html, f"Scenario {scenario!r} missing from report.html"
+        for path in self.PATHS:
+            assert path in html, f"Scenario {path!r} missing from report.html"

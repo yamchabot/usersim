@@ -29,7 +29,7 @@ class PersonaAuthor(Person):
                   Implies(P.pipeline_exit_code == 0, P.results_total >= 9)),
             named("persona-author/example-has-3-persons",
                   Implies(P.pipeline_exit_code == 0, P.person_count >= 3)),
-            named("persona-author/example-has-3-scenarios",
+            named("persona-author/example-has-3-paths",
                   Implies(P.pipeline_exit_code == 0, P.scenario_count >= 3)),
             # All constraints must be present to write new personas against
             named("persona-author/all-constraints-present",
