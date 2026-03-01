@@ -235,10 +235,10 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     # Count active constraint references for each (variable, scenario, persona)
     gm_var_sc:  dict[str, dict[str, int]] = {}   # variable × scenario
     gm_var_pers: dict[str, dict[str, int]] = {}  # variable × persona
-    gm_pers_sc:  dict[str, dict[str, int]] = {}  # persona × scenario
-    gm_group_sc: dict[str, dict[str, int]] = {}  # group × scenario (declared here, populated in loop)
-
-    gm_group_sc:  dict[str, dict[str, int]] = {}
+    gm_pers_sc:   dict[str, dict[str, int]] = {}  # persona × scenario
+    gm_group_sc:  dict[str, dict[str, int]] = {}  # group × scenario
+    gm_pers_grp:  dict[str, dict[str, int]] = {}  # persona × group
+    gm_var_grp:   dict[str, dict[str, int]] = {}  # variable × group
 
     for r in all_results:
         persona  = r["person"]
@@ -268,6 +268,15 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             if group:
                 gm_group_sc.setdefault(group, {})
                 gm_group_sc[group][scenario] = gm_group_sc[group].get(scenario, 0) + 1
+                # persona × group
+                gm_pers_grp.setdefault(persona, {})
+                gm_pers_grp[persona][group] = gm_pers_grp[persona].get(group, 0) + 1
+
+            # variable × group
+            for v in _extract_vars(expr):
+                if group:
+                    gm_var_grp.setdefault(v, {})
+                    gm_var_grp[v][group] = gm_var_grp[v].get(group, 0) + 1
 
     # Exclude totals/sums that dominate and obscure the rest of the matrix
     _MATRIX_EXCLUDE = {"results_total"}
@@ -289,28 +298,75 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     tbl_group_sc = _matrix_table(all_groups, scenarios, gm_group_sc,
                                   row_label="group", col_label="scenario")
 
+    # Serialize graph data for the force-directed graph tab
+    import json as _json
+    _gd = {
+        "persona_groups":   gm_pers_grp,
+        "group_scenarios":  gm_group_sc,
+        "persona_scenarios": {p: dict(v) for p, v in gm_pers_sc.items()},
+        "var_groups":       {v: dict(g) for v, g in gm_var_grp.items()
+                             if v not in _MATRIX_EXCLUDE},
+    }
+    graph_data_js = _json.dumps(_gd)
+
     global_matrices_html = f"""
 <div class="gm-section">
   <div class="gm-title">📊 Global constraint coverage</div>
-  <div class="gm-grid">
-    <div class="gm-panel">
-      <div class="gm-panel-label">Variable × Scenario</div>
-      {tbl_var_sc}
+  <div class="gm-tab-bar">
+    <button class="gm-tab-btn active" onclick="gmTab(this,'matrices')">📊 Matrices</button>
+    <button class="gm-tab-btn" onclick="gmTab(this,'graph')">🕸 Graph</button>
+  </div>
+  <div class="gm-tab-pane" id="gm-pane-matrices">
+    <div class="gm-grid">
+      <div class="gm-panel">
+        <div class="gm-panel-label">Variable × Scenario</div>
+        {tbl_var_sc}
+      </div>
+      <div class="gm-panel">
+        <div class="gm-panel-label">Variable × Persona</div>
+        {tbl_var_pers}
+      </div>
+      <div class="gm-panel">
+        <div class="gm-panel-label">Persona × Scenario</div>
+        {tbl_pers_sc}
+      </div>
+      <div class="gm-panel">
+        <div class="gm-panel-label">Group × Scenario</div>
+        {tbl_group_sc}
+      </div>
     </div>
-    <div class="gm-panel">
-      <div class="gm-panel-label">Variable × Persona</div>
-      {tbl_var_pers}
+  </div>
+  <div class="gm-tab-pane" id="gm-pane-graph" style="display:none">
+    <div class="graph-ctrl">
+      <label>Edges&nbsp;
+        <select id="graphEdgeType" onchange="initGraph()">
+          <option value="persona_groups">Personas → Groups</option>
+          <option value="group_scenarios">Groups → Scenarios</option>
+          <option value="persona_scenarios">Personas → Scenarios</option>
+          <option value="var_groups">Variables → Groups</option>
+        </select>
+      </label>
+      <label style="margin-left:18px">Min weight&nbsp;
+        <input type="range" id="graphMinW" min="1" max="30" value="1"
+               oninput="document.getElementById('graphMinWVal').textContent=this.value;initGraph()">
+        <span id="graphMinWVal">1</span>
+      </label>
+      <label style="margin-left:18px">
+        <input type="checkbox" id="graphLabels" checked onchange="renderGraph()">
+        labels
+      </label>
     </div>
-    <div class="gm-panel">
-      <div class="gm-panel-label">Persona × Scenario</div>
-      {tbl_pers_sc}
-    </div>
-    <div class="gm-panel">
-      <div class="gm-panel-label">Group × Scenario</div>
-      {tbl_group_sc}
+    <div style="position:relative">
+      <canvas id="graphCanvas" style="width:100%;height:520px;display:block;cursor:grab"></canvas>
+      <div id="graphTip" style="display:none;position:absolute;pointer-events:none;
+           padding:6px 10px;border-radius:6px;font-size:12px;white-space:nowrap;
+           background:var(--card2);border:1px solid var(--border);color:var(--text)"></div>
     </div>
   </div>
 </div>
+<script>
+window.GRAPH_DATA = {graph_data_js};
+</script>
 """
 
     # ── Variable impact matrix (per-persona) ──────────────────────────────────
@@ -807,7 +863,20 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
   background: #0d1117; border: 1px solid var(--border);
   border-radius: 10px; padding: 18px 22px; margin-bottom: 24px;
 }}
-.gm-title {{ font-weight: 700; color: var(--fg); margin-bottom: 14px; font-size: 14px; }}
+.gm-title {{ font-weight: 700; color: var(--fg); margin-bottom: 10px; font-size: 14px; }}
+/* Tab bar */
+.gm-tab-bar {{ display:flex; gap:4px; margin-bottom:14px; border-bottom:1px solid var(--border); padding-bottom:4px; }}
+.gm-tab-btn {{
+  padding:5px 14px; border-radius:6px 6px 0 0; border:1px solid transparent;
+  background:transparent; color:var(--muted); cursor:pointer; font-size:12px; font-weight:600;
+  transition:background .15s, color .15s;
+}}
+.gm-tab-btn:hover {{ background:var(--card2); color:var(--text); }}
+.gm-tab-btn.active {{ background:var(--card2); color:var(--text); border-color:var(--border); border-bottom-color:transparent; }}
+/* Graph controls */
+.graph-ctrl {{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:12px; font-size:12px; color:var(--muted); }}
+.graph-ctrl select, .graph-ctrl input[type=range] {{ background:var(--card2); color:var(--text); border:1px solid var(--border); border-radius:5px; padding:3px 7px; font-size:12px; }}
+.graph-ctrl input[type=checkbox] {{ accent-color:var(--blue); }}
 .gm-grid {{
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1163,6 +1232,190 @@ window.togglePalette = function() {{
 }};
 
 window.applyPalette();
+
+// ── Tab switcher ──────────────────────────────────────────────────────────────
+window.gmTab = function(btn, name) {{
+  document.querySelectorAll('.gm-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.gm-tab-pane').forEach(p => p.style.display = 'none');
+  btn.classList.add('active');
+  document.getElementById('gm-pane-' + name).style.display = '';
+  if (name === 'graph') {{ initGraph(); }}
+}};
+
+// ── Force-directed graph ──────────────────────────────────────────────────────
+(function() {{
+  const TYPE_COLORS = {{
+    persona:  ['#58a6ff','#8860c8'],
+    scenario: ['#ffa657','#c46830'],
+    group:    ['#3fb950','#88b84a'],
+    variable: ['#b878e8','#6bbfcc'],
+  }};
+  const EDGE_SETS = {{
+    persona_groups:    {{ a:'persona',  b:'group',    data:()=>window.GRAPH_DATA.persona_groups }},
+    group_scenarios:   {{ a:'group',    b:'scenario', data:()=>window.GRAPH_DATA.group_scenarios }},
+    persona_scenarios: {{ a:'persona',  b:'scenario', data:()=>window.GRAPH_DATA.persona_scenarios }},
+    var_groups:        {{ a:'variable', b:'group',    data:()=>window.GRAPH_DATA.var_groups }},
+  }};
+
+  let nodes=[], edges=[], dragging=null, dragOffX=0, dragOffY=0;
+  let hoveredNode=null, animId=null, canvasW=900, canvasH=520, frameCount=0;
+
+  const palIdx  = () => window._paletteIdx || 0;
+  const nColor  = t  => (TYPE_COLORS[t]||['#aaa','#aaa'])[palIdx()];
+  const textClr = () => palIdx()===0 ? '#e6edf3' : '#e4e8d4';
+  const bgClr   = () => palIdx()===0 ? '#161b22' : '#181e10';
+
+  window.initGraph = function() {{
+    const eKey = document.getElementById('graphEdgeType')?.value || 'persona_groups';
+    const minW = parseInt(document.getElementById('graphMinW')?.value||'1');
+    const eSet = EDGE_SETS[eKey]; if (!eSet) return;
+    const raw  = eSet.data() || {{}};
+    const nodeMap = {{}};
+    const mkNode = (id, type) => {{
+      if (!nodeMap[id]) {{
+        const a=Math.random()*Math.PI*2, r=80+Math.random()*120;
+        nodeMap[id]={{id,type,label:id.replace(/_/g,' '),
+                      x:Math.cos(a)*r,y:Math.sin(a)*r,vx:0,vy:0}};
+      }}
+      return nodeMap[id];
+    }};
+    edges=[];
+    for (const [aId,targets] of Object.entries(raw)) {{
+      for (const [bId,w] of Object.entries(targets)) {{
+        if (w<minW) continue;
+        mkNode(aId,eSet.a); mkNode(bId,eSet.b);
+        edges.push({{source:aId,target:bId,weight:w}});
+      }}
+    }}
+    nodes=Object.values(nodeMap);
+    if (animId) cancelAnimationFrame(animId);
+    frameCount=0; tick();
+  }};
+
+  function applyForces() {{
+    const K_REP=4800,K_SP=0.06,REST=130,G=0.018,D=0.82;
+    for (let i=0;i<nodes.length;i++) {{
+      let fx=0,fy=0;
+      for (let j=0;j<nodes.length;j++) {{
+        if(i===j) continue;
+        const dx=nodes[i].x-nodes[j].x, dy=nodes[i].y-nodes[j].y;
+        const d2=dx*dx+dy*dy+1;
+        fx+=K_REP*dx/(d2+40); fy+=K_REP*dy/(d2+40);
+      }}
+      for (const e of edges) {{
+        const oid=e.source===nodes[i].id?e.target:e.target===nodes[i].id?e.source:null;
+        if(!oid) continue;
+        const o=nodes.find(n=>n.id===oid); if(!o) continue;
+        const dx=o.x-nodes[i].x, dy=o.y-nodes[i].y;
+        const d=Math.sqrt(dx*dx+dy*dy)+0.01, f=K_SP*(d-REST);
+        fx+=f*dx/d; fy+=f*dy/d;
+      }}
+      nodes[i].vx=(nodes[i].vx+fx-G*nodes[i].x)*D;
+      nodes[i].vy=(nodes[i].vy+fy-G*nodes[i].y)*D;
+    }}
+    for (const n of nodes) {{
+      if(n===dragging) continue;
+      n.x=Math.max(-canvasW/2+20,Math.min(canvasW/2-20,n.x+n.vx));
+      n.y=Math.max(-canvasH/2+20,Math.min(canvasH/2-20,n.y+n.vy));
+    }}
+  }}
+
+  window.renderGraph = function() {{
+    const cv=document.getElementById('graphCanvas'); if(!cv) return;
+    const dpr=window.devicePixelRatio||1;
+    canvasW=cv.clientWidth||900; canvasH=cv.clientHeight||520;
+    if(cv.width!==canvasW*dpr||cv.height!==canvasH*dpr){{cv.width=canvasW*dpr;cv.height=canvasH*dpr;}}
+    const ctx=cv.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,canvasW,canvasH);
+    ctx.fillStyle=bgClr(); ctx.fillRect(0,0,canvasW,canvasH);
+    const cx=canvasW/2, cy=canvasH/2;
+    const showL=document.getElementById('graphLabels')?.checked!==false;
+    const maxW=Math.max(...edges.map(e=>e.weight),1);
+
+    // edges
+    for (const e of edges) {{
+      const a=nodes.find(n=>n.id===e.source), b=nodes.find(n=>n.id===e.target);
+      if(!a||!b) continue;
+      const al=(0.06+(e.weight/maxW)*0.44).toFixed(2);
+      ctx.strokeStyle=palIdx()===0?`rgba(255,255,255,${{al}})`:`rgba(228,232,212,${{al}})`;
+      ctx.lineWidth=0.5+(e.weight/maxW)*3;
+      ctx.beginPath(); ctx.moveTo(cx+a.x,cy+a.y); ctx.lineTo(cx+b.x,cy+b.y); ctx.stroke();
+    }}
+
+    // nodes
+    for (const n of nodes) {{
+      const nx=cx+n.x, ny=cy+n.y, hov=n===hoveredNode, R=hov?13:10;
+      ctx.beginPath(); ctx.arc(nx,ny,R,0,Math.PI*2);
+      ctx.fillStyle=nColor(n.type); ctx.globalAlpha=hov?1:0.88; ctx.fill();
+      ctx.globalAlpha=1;
+      if(hov){{ctx.strokeStyle=textClr();ctx.lineWidth=1.5;ctx.stroke();}}
+      if(showL){{
+        ctx.fillStyle=textClr(); ctx.font=`${{hov?'bold ':''}}10px monospace`;
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        const lbl=n.label.length>16?n.label.slice(0,14)+'…':n.label;
+        ctx.fillText(lbl,nx,ny+R+9);
+      }}
+    }}
+
+    // legend
+    const types=[...new Set(nodes.map(n=>n.type))];
+    let lx=12,ly=14; ctx.font='10px monospace';
+    for(const t of types){{
+      ctx.beginPath();ctx.arc(lx+5,ly,4,0,Math.PI*2);
+      ctx.fillStyle=nColor(t);ctx.globalAlpha=0.9;ctx.fill();ctx.globalAlpha=1;
+      ctx.fillStyle=textClr();ctx.textAlign='left';ctx.textBaseline='middle';
+      ctx.fillText(t,lx+12,ly); lx+=ctx.measureText(t).width+26;
+    }}
+  }};
+
+  function tick(){{
+    applyForces(); renderGraph(); frameCount++;
+    animId=(frameCount<400||dragging)?requestAnimationFrame(tick):null;
+  }}
+
+  // Mouse
+  const cv=()=>document.getElementById('graphCanvas');
+  const cPos=e=>{{
+    const r=cv()?.getBoundingClientRect();
+    return r?[(e.clientX-r.left)*(canvasW/r.width)-canvasW/2,
+              (e.clientY-r.top)*(canvasH/r.height)-canvasH/2]:[0,0];
+  }};
+  const nearN=(x,y,t=20)=>nodes.reduce((b,n)=>{{
+    const d=(n.x-x)**2+(n.y-y)**2; return d<(b?((b.x-x)**2+(b.y-y)**2):t*t)&&d<t*t?n:b;
+  }},null);
+
+  document.addEventListener('mousedown',e=>{{
+    if(!cv()?.contains(e.target)) return;
+    const [x,y]=cPos(e), n=nearN(x,y);
+    if(n){{dragging=n;dragOffX=n.x-x;dragOffY=n.y-y;cv().style.cursor='grabbing';}}
+  }});
+  document.addEventListener('mousemove',e=>{{
+    if(!cv()) return;
+    const [x,y]=cPos(e);
+    if(dragging){{
+      dragging.x=x+dragOffX;dragging.y=y+dragOffY;dragging.vx=0;dragging.vy=0;
+      if(!animId){{frameCount=0;tick();}}
+    }} else {{
+      const prev=hoveredNode;
+      hoveredNode=cv().matches(':hover')?nearN(x,y,22):null;
+      if(hoveredNode!==prev) renderGraph();
+      const tip=document.getElementById('graphTip');
+      if(tip&&hoveredNode){{
+        const r=cv().getBoundingClientRect();
+        tip.textContent=`${{hoveredNode.id}} (${{hoveredNode.type}}) — weight: ${{
+          edges.filter(e2=>e2.source===hoveredNode.id||e2.target===hoveredNode.id)
+               .reduce((s,e2)=>s+e2.weight,0)}}`;
+        tip.style.display='block';
+        tip.style.left=((hoveredNode.x+canvasW/2)*(r.width/canvasW)+14)+'px';
+        tip.style.top=((hoveredNode.y+canvasH/2)*(r.height/canvasH)-10)+'px';
+      }} else if(tip) tip.style.display='none';
+    }}
+  }});
+  document.addEventListener('mouseup',()=>{{
+    if(dragging){{dragging=null;cv()&&(cv().style.cursor='grab');}}
+  }});
+}})();
 </script>
 
 </body>
