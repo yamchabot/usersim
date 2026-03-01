@@ -16,20 +16,28 @@ users:
 scenarios:
   - name: data_processor_example
     description: "Full pipeline on the data-processor example (3 scenarios, 3 personas)"
+    tags: [smoke, continuous]
   - name: scaffold_and_validate
     description: "usersim init into a temp dir — verify all expected files are created"
+    tags: [smoke, continuous]
   - name: bad_config
     description: "Intentionally broken configs — verify clean error messages and non-zero exit"
+    tags: [continuous]
   - name: judge_standalone
     description: "usersim judge with synthetic perceptions — verify standalone subcommand"
+    tags: [continuous]
   - name: report_generation
     description: "Generate HTML report from known results — verify valid self-contained HTML"
+    tags: [continuous]
   - name: full_integration
     description: "All subsystems in one pass — ensures every persona constraint fires with a real value (no vacuous antecedents)"
+    tags: [regression]
   - name: violation_health
     description: "Run data-processor and introspect its results — measures whether usersim's own constraints are doing useful work (healthy churn, not vacuous)"
+    tags: [regression]
   - name: broken_example
     description: "Intentionally broken instrumentation script — verifies usersim detects and surfaces the failure rather than swallowing it silently"
+    tags: [regression]
 
 output:
   results: dogfood/results.json

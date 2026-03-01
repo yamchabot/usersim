@@ -45,6 +45,7 @@ def cmd_run(args):
             scenario_override=args.scenario or None,
             output_path=args.out,
             verbose=args.verbose,
+            tags=args.tags or None,
         )
     except FileNotFoundError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -328,6 +329,10 @@ def main(argv=None):
     p_run.add_argument("--quiet",   action="store_true", help="Suppress all human output")
     p_run.add_argument("--matrix", action="store_true", help="Print scenario×person grid (token-heavy; not for LLM pipelines)")
     p_run.add_argument("--verbose", action="store_true", help="Print stage info to stderr")
+    p_run.add_argument(
+        "--tags", metavar="TAG", nargs="+",
+        help="Only run scenarios with at least one matching tag (e.g. --tags continuous)",
+    )
     p_run.set_defaults(func=cmd_run)
 
     # ── judge ─────────────────────────────────────────────────────────────────

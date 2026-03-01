@@ -113,6 +113,12 @@ def _normalise_config(raw: dict, base_dir: Path) -> dict:
         for s in raw_scenarios
         if isinstance(s, dict) and "name" in s and s.get("description")
     }
+    # Optional tags keyed by scenario name (default: all tags / untagged)
+    cfg["_scenario_tags"] = {
+        s["name"]: s.get("tags", [])
+        for s in raw_scenarios
+        if isinstance(s, dict) and "name" in s
+    }
 
     cfg["_base_dir"] = base_dir
     return cfg
@@ -140,6 +146,7 @@ def run_from_config(
     scenario_override: "str | None" = None,
     output_path: "str | Path | None" = None,
     verbose: bool = False,
+    tags: "list[str] | None" = None,
 ) -> dict:
     """
     Run the full pipeline as declared in a usersim.yaml config file.
@@ -153,6 +160,8 @@ def run_from_config(
         scenario_override: run only this scenario (ignores config scenarios list)
         output_path:       write results JSON here; None → stdout
         verbose:           print stage info to stderr
+        tags:              if provided, only run scenarios whose tags overlap with this list;
+                           untagged scenarios are included unless tags is non-empty
     """
     from usersim.judgement.engine import _write_output
 
@@ -164,6 +173,17 @@ def run_from_config(
     base_dir   = cfg["_base_dir"]
     user_files = cfg["_user_files"]
     scenarios  = [scenario_override] if scenario_override else cfg["_scenarios"]
+
+    # Filter by tags if requested
+    if tags and not scenario_override:
+        tag_set = set(tags)
+        scenario_tags = cfg.get("_scenario_tags", {})
+        scenarios = [
+            s for s in scenarios
+            if not scenario_tags.get(s) or tag_set.intersection(scenario_tags.get(s, []))
+        ]
+        if verbose:
+            print(f"[usersim] tag filter {tags!r}: running {len(scenarios)} scenario(s)", file=sys.stderr)
 
     instr_cmd = cfg["instrumentation"]
     perc_cmd  = cfg["perceptions"]

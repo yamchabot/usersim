@@ -16,6 +16,26 @@ pytest
 
 71 tests. Takes ~25 seconds (integration tests run real pipelines).
 
+## Run by scenario tag
+
+Scenarios are tagged `smoke`, `continuous`, or `regression`. Use `--tags` to run a subset:
+
+```bash
+# Fast sanity check — only smoke scenarios
+usersim run --tags smoke
+
+# Every agent invocation — 5 scenarios, skips the slow regression suite
+usersim run --tags continuous
+
+# Release gate — full suite including violation_health and broken_example
+usersim run --tags regression
+
+# Multiple tags — union (any match runs the scenario)
+usersim run --tags smoke regression
+```
+
+Untagged scenarios always run (no filtering applied to them).
+
 ## Test structure
 
 ```
