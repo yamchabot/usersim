@@ -1,144 +1,114 @@
-# usersim — Vision & Philosophy
+# VISION.md
 
-## The Problem
+## The core idea
 
-AI coding tools are compressing feature development timelines from months to days.
-A single engineer with AI assistance can now ship 4–40x as many features as before.
-Management is starting to expect what used to take 3–6 months to land in a week —
-or a day.
+You run your application a small number of times.
+Each run produces a set of facts about how your system behaved.
+Z3, a theorem prover, evaluates thousands of logical constraints against those facts simultaneously.
 
-This is genuinely exciting. It is also a reliability time bomb.
+One run. Thousands of checks. Build time bounded by how many times you run your app, not by how many assertions you want to make.
 
-When features accumulate that fast, with no person or agent tracking the business
-relationships between them, you get drift. You get silent regressions. You get
-a codebase that technically works but slowly stops doing what users actually need.
-
-The answer is more tests. A lot more. If you have 40x as many features, you need
-at minimum 40x as many tests — and arguably exponentially more, because feature
-interactions multiply. Think 100x. Think 1,000x. Think 10,000x.
-
-The obvious problem: 40x more tests means 40x longer builds. That is untenable.
-Nobody ships with a 4-day CI run.
+That's the whole idea. Everything else follows from it.
 
 ---
 
-## The Insight
+## Why this matters now
 
-Most of the cost in a test suite is *running the application*. The assertions
-themselves are cheap. Traditional test frameworks waste this by coupling them
-together: one run, one assertion, one pass/fail.
+AI coding tools are pushing feature velocity 4–40× faster than before.
+Management is starting to expect week-long timelines for work that used to take months.
+Features that once took a team a quarter now ship in a day.
 
-usersim decouples them.
+This is genuinely useful. It's also a reliability time bomb.
 
-You run a small number of *scenarios* — realistic end-to-end executions of your
-application. At each step, you collect rich data: timings, counts, rates, flags,
-derived values. This data becomes a set of *facts* about your system's current
-behavior.
+When features accumulate at that rate, with no one tracking the relationships between them, you get drift. Silent regressions. A system that technically passes all its tests but slowly stops doing what the business actually needs.
 
-Then you hand those facts to Z3.
+The answer is more tests. Not 2× more. Not 10× more. To match the feature velocity with real safety margins, you need 100×, 1000×, maybe 10,000× the test coverage you have today.
 
-Z3 is a theorem prover and constraint satisfaction engine from Microsoft Research.
-It is extraordinarily good at evaluating large numbers of logical assertions
-against a fixed dataset — far faster than running any of those assertions
-individually against a live system. Z3 does not need to touch your application
-at all. It works purely on the facts you've already collected.
+The obvious problem: 10,000× more tests means 10,000× longer builds. That's untenable.
 
-This is where the leverage comes from.
-
-**One scenario run → thousands of constraint checks.**
-
-Every persona, every threshold, every conditional rule, every interaction between
-variables — Z3 evaluates them all simultaneously. The combinatorial space of
-assertions that Z3 can cover from a single data collection run is enormous.
-That is the point. That is the whole point.
+usersim's answer: break the coupling between running your app and evaluating assertions.
 
 ---
 
-## What Z3 Should Be Doing
+## The coupling problem
 
-Z3 is not just a fancy assertion library. It should be doing **heavy lifting**.
+Every traditional test framework works the same way:
 
-A well-designed usersim suite pushes as much logic as possible into the constraint
-layer:
+1. Set up state
+2. Run the application
+3. Make one assertion
+4. Tear down
 
-- **Thresholds** — `P.response_ms <= 200`, `P.error_rate <= 0.01`
-- **Conditional rules** — `Implies(P.cache_warm, P.response_ms <= 50)`
-- **Logical combinations** — `And(P.uptime >= 99.9, P.p99_ms <= 500)`
-- **Cross-variable relationships** — `Implies(P.load_high, P.error_rate <= 0.05)`
-- **Negations** — `Not(P.degraded_mode)` as a hard invariant
-- **Persona-differentiated tolerances** — same facts, radically different constraint sets per user
+The application run is the expensive part. The assertion is cheap. But they're bundled — you pay the full cost of a run for every single assertion.
 
-The more constraints you express in Z3, the more effective test coverage you get
-for free, with zero additional application runs. This is the combinatorial
-amplification that makes usersim viable at scale.
+usersim inverts this. You run your application once per scenario. That produces a snapshot of facts — raw numbers about how your system behaved. Then Z3 evaluates every constraint in every persona against that snapshot simultaneously. The application run cost is fixed. The constraint evaluation cost is effectively zero.
 
-The goal is to have constraint files that are *dense*. Many users. Many constraints
-per user. Many scenarios. The scenario runs stay small; the coverage explodes.
+Add 100 more constraints across 10 more personas: Z3 evaluates 1,000 additional checks in milliseconds. No additional application runs.
 
 ---
 
-## What the Perceptions Layer Is NOT For
+## Z3 is the engine
 
-The perceptions layer (Layer 2) is a translation step. It takes raw instrumentation
-output and normalizes it into a stable set of named variables that Z3 can reason about.
+Z3 is a theorem prover and constraint satisfaction engine from Microsoft Research. It's not an assertion library. It reasons about relationships between variables, proves whether constraint systems are satisfiable, and finds counterexamples when they're not.
 
-It should be **thin**. Its job is:
+Most tools use Z3 as an expensive way to check `x > 5`. That's wasting it.
 
-- Rename/reshape metrics for clarity
-- Compute simple derived values (rates, ratios, percentages)
-- Surface facts that are definitionally binary (did the job complete? is the
-  feature flag enabled?)
+Z3 is built for:
+- **Cross-variable arithmetic**: `error_count * 1000 <= total_requests * 1` (error rate < 0.1% without computing a ratio)
+- **Structural invariants**: `Not(And(exit_code == 0, result_count == 0))` — can't succeed with zero results
+- **Matrix arithmetic**: `results_total == person_count * scenario_count` — the output matrix must be complete
+- **Conditional reasoning**: `Implies(And(load_high, cache_cold), response_ms <= 2000)` — multi-premise conditionals
+- **Scaling constraints**: `wall_ms <= result_count * 10` — time budget scales with work done
+- **Consistency proofs**: `satisfied_count <= total_count` — arithmetic invariants that catch corrupt data
+- **Boolean arithmetic**: `(has_doctype + is_self_contained + has_cards) >= 2` — majority-vote quality checks
 
-**What perceptions should not do:**
+Every one of these is free once you've collected the facts. Z3 evaluates all of them in one pass.
 
-- Encode thresholds ("is 400ms fast?") — that belongs in persona constraints
-- Make judgement calls — that is Z3's job
-- Add complexity that could be expressed as Z3 constraints instead
-
-The rule of thumb: **only add something to perceptions if it would be genuinely
-awkward to express in Z3 constraints**. If you're computing a rolling percentile
-from a time series, or extracting a value from a nested data structure, or doing
-something stateful — that belongs in perceptions. If you're checking whether a
-number is above a threshold, that belongs in Z3.
-
-Keep perceptions boring. Let Z3 be interesting.
+The design target: write constraint files that are *dense*. Many personas. Many constraints per persona. Z3 doing real arithmetic and relational reasoning, not just threshold checks. The scenario runs stay small; the coverage is enormous.
 
 ---
 
-## The SRE Perspective
+## Three layers, one rule each
 
-Traditional test suites check correctness: did this return 200? Did this render?
-These are necessary but not sufficient. A system can be technically correct and
-still be failing its users.
+### Instrumentation: measure, don't judge
 
-usersim checks *satisfaction*: would the on-call engineer trust this dashboard?
-Would the CTO understand this screen under peak load? Would the power user tolerate
-this response time in a degraded state?
+Instrumentation runs your application and collects raw numbers. Its only job is to produce a JSON object with as many measurements as you can extract. Response times, counts, error totals, file sizes, exit codes — everything.
 
-These are the questions that matter for long-term reliability. They map directly
-to business relationships — SLAs, user trust, churn risk. They are also the
-questions that get silently broken when features ship at 40x velocity with no
-one watching the aggregate.
+The rule: **no judgements**. Numbers only. Don't compute derived values if the raw values are available. Don't decide whether something is "fast enough." That's Z3's job.
 
-By encoding these questions as Z3 constraints across a realistic persona space,
-usersim makes them first-class citizens of your build pipeline. They run on every
-commit. They fail loudly. They tell you exactly which user class breaks and under
-which scenario.
+More raw variables means more constraint surface. Collect everything.
 
-That is regression coverage that scales.
+### Perceptions: rename, don't reason
+
+Perceptions translates raw metric names into the stable variable names your constraints will reference. It normalizes the interface between instrumentation (which changes when your app changes) and constraints (which should be stable).
+
+The rule: **no thresholds, no opinions**. Pass numbers through. Rename for clarity. Compute a ratio only if the raw numerator and denominator aren't available separately — because if they are, Z3 can do the division and different personas can apply different thresholds.
+
+If you find yourself writing `"is_fast": x < 200` in perceptions, stop. That's a constraint: `Implies(P.measured, P.response_ms < 200)`. Put it in Z3.
+
+If you find yourself computing `error_rate = errors / total` in perceptions, stop. Pass `errors` and `total` separately. Let each persona express its own rate threshold using cross-multiplication: `P.errors * 1000 <= P.total * 1`.
+
+Perceptions should be boring. A thin translation layer. The moment it starts making decisions, you've moved logic out of Z3 and thrown away coverage.
+
+### Constraints: this is where the work happens
+
+Persona constraint files are Z3 programs. They express the requirements of a specific user class — not as a list of threshold checks, but as a logical model of what that user needs to be true for the system to be working for them.
+
+Different personas should have genuinely different constraint logic, not just different threshold values. A CI engineer cares that error exits are exactly `== 1` (Unix convention), not just `>= 1`. An ops engineer cares that timing budgets scale with load. A persona author cares that `results_total == person_count * scenario_count` — if it doesn't, her report is structurally broken regardless of what the numbers say.
+
+The rule: **if it can be expressed as a Z3 constraint, it belongs in Z3**. Push hard on this. The more you put in constraints, the more coverage you get for free.
 
 ---
 
-## The Design Target
+## What good looks like
 
-A mature usersim suite should look like this:
+A mature usersim suite:
+- 5–20 scenarios that exercise realistic application states
+- Rich instrumentation that exposes every measurable variable
+- A thin perceptions file that just passes numbers through with stable names
+- 10–50+ personas with dense, differentiated constraint sets
+- Z3 doing arithmetic, relational reasoning, and invariant checking — not just threshold comparisons
 
-- **Small number of scenarios** (5–20) that exercise realistic application states
-- **Rich instrumentation** that captures as many variables as the application exposes
-- **Thin perceptions** that translate without editorializing
-- **Many personas** (10–50+) with dense, differentiated constraint sets
-- **Z3 doing thousands of checks** per run, for free, in milliseconds
+The scenario runs are bounded and cheap. The constraint evaluation is free. Coverage grows without limit as you add personas and constraints.
 
-The cost stays flat (bounded by scenario execution time). The coverage grows
-without bound as you add personas and constraints. That is the only path to
-10,000x test coverage without a 10,000x build time.
+That's how you get 10,000× test coverage without a 10,000× build.

@@ -1,51 +1,76 @@
 # usersim
 
-**Test whether your application satisfies real users — not just whether it works.**
+**Combinatorial test coverage without combinatorial build cost.**
 
-Most test suites check correctness: *did this return 200? did this render?*  
-usersim checks satisfaction: *would the CTO understand this screen? would the on-call engineer trust this dashboard?*
+Traditional test suites scale linearly: one test, one assertion, one pass/fail.
+When you need 10,000 tests, you run your application 10,000 times.
+usersim breaks that coupling.
 
-You define simulated personas. You express what each one needs as logical constraints. usersim measures whether your application satisfies them — automatically, on every build.
+You run your application a small number of times — once per scenario.
+Each run collects raw measurements. Then Z3, a theorem prover from Microsoft
+Research, evaluates thousands of logical constraints against those measurements
+simultaneously. One scenario run. Thousands of checks. For free.
+
+---
+
+## The problem it solves
+
+AI coding tools are compressing feature timelines from months to days.
+4–40× as many features means you need proportionally more tests — not just
+to keep up, but exponentially more, because feature interactions multiply.
+Think 10,000× coverage, not 40×.
+
+The obvious problem: 10,000× more tests means 10,000× longer builds.
+That's a dead end.
+
+usersim's answer: **decouple the expensive part (running your app) from the
+cheap part (evaluating assertions)**. Run your app N times. Evaluate millions
+of constraint combinations against the results. Build time stays flat.
+Coverage grows without bound.
 
 ---
 
 ## How it works
 
-Declare your pipeline in `usersim.yaml`. Run one command.
-
-```bash
-usersim run
-```
-
-usersim reads the config, runs three stages in sequence, and reports which simulated users are satisfied across all your scenarios:
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 1 — Instrumentation     (your language)              │
 │                                                             │
-│  A shell command that collects metrics from your app        │
-│  and writes metrics JSON to stdout.                         │
+│  Run your application. Collect raw measurements.            │
+│  Write a JSON object to stdout. That's it.                  │
+│                                                             │
+│  Keep this dumb. Measure, don't judge.                      │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  { "response_ms": 240, "error_count": 0 }
+                        │  { "response_ms": 240, "errors": 0,
+                        │    "results": 12, "duration_ms": 1800 }
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 2 — Perceptions         (any language)               │
+│  Layer 2 — Perceptions         (Python)                     │
 │                                                             │
-│  A domain expert translates raw metrics into observable     │
-│  quantities.  Mostly numeric — users apply their own        │
-│  thresholds in layer 3.  Reads stdin, writes to stdout.     │
+│  Rename and reshape raw metrics into stable variable names. │
+│  Pass numbers through. Compute ratios only if the raw       │
+│  numbers aren't available.                                  │
+│                                                             │
+│  Keep this thin. No thresholds. No opinions.                │
 └───────────────────────┬─────────────────────────────────────┘
-                        │  { "response_ms": 240, "error_rate": 0.0, "result_count": 12 }
+                        │  { "response_ms": 240, "error_count": 0,
+                        │    "result_count": 12, "wall_ms": 1800 }
                         ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3 — Judgement           (Z3, controlled by usersim)  │
+│  Layer 3 — Judgement           (Z3)                         │
 │                                                             │
-│  Each persona applies their own numeric thresholds.         │
-│  Reports who is satisfied and why.                          │
+│  Each persona is a set of Z3 constraints over the           │
+│  perception variables. Z3 evaluates all of them against     │
+│  the collected facts and reports which personas are         │
+│  satisfied, which constraints failed, and why.              │
+│                                                             │
+│  This is where the work happens. Make this fat.             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**You write layers 1 and 2 in whatever language fits your project. We handle layer 3.**
+One scenario run produces one set of facts. Z3 evaluates every constraint
+in every persona against those facts simultaneously. Add more personas and
+more constraints — the scenario run cost doesn't change.
 
 ---
 
@@ -62,173 +87,167 @@ pip install "usersim[z3]"    # with the real Z3 solver (recommended)
 
 ```bash
 usersim init      # scaffold project files
-# edit instrumentation.*, perceptions.py, users/*.py
 usersim run       # run the full pipeline
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough (~10 minutes).
+See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough.
 
 ---
 
 ## Configuration
 
-`usersim.yaml` is the single source of truth for your simulation:
-
 ```yaml
+# usersim.yaml
+
 version: 1
 
-# Shell command to run instrumentation (any language).
-# usersim runs this, reads metrics JSON from its stdout.
-# USERSIM_SCENARIO env var is set to the current scenario name.
-instrumentation: "node instrumentation.js"
+# Shell command that runs your app and writes metrics JSON to stdout.
+# USERSIM_SCENARIO is set to the current scenario name.
+instrumentation: "python3 instrumentation.py"
 
-# Shell command (or Python file with compute()) for perceptions.
-# Reads metrics JSON from stdin, writes perceptions JSON to stdout.
+# Python file (or shell command) that translates metrics to perception vars.
 perceptions: "python3 perceptions.py"
 
-# User persona files — a single file or a glob over a directory.
-# All Person subclasses found are loaded automatically.
+# Persona constraint files. All Person subclasses are loaded automatically.
 users:
-  - users.py          # single file (good for a handful of personas)
-  # - users/*.py      # one file per persona (better for many)
+  - users/*.py
 
-# Run the pipeline once per scenario.
+# Each scenario triggers one instrumentation run.
 scenarios:
   - default
   - peak_load
   - degraded
 
-# Optional: save output to files.
 output:
   results: results.json
   report:  report.html
 ```
 
-For each scenario, usersim:
-1. Runs `instrumentation` with `USERSIM_SCENARIO=<name>` in the environment
-2. Pipes its output to `perceptions` on stdin
-3. Runs judgement in-process and collects results
-
-If there are multiple scenarios, the final output is a matrix of person × scenario results.
-
 ---
 
-## Integrating with your build system
+## Layer 1: Instrumentation
 
-`usersim run` is a single command with no arguments. Drop it anywhere:
-
-**Makefile:**
-```makefile
-test-ux:
-    usersim run
-```
-
-**package.json:**
-```json
-"scripts": {
-    "test:ux": "usersim run"
-}
-```
-
-**pyproject.toml:**
-```toml
-[tool.hatch.envs.default.scripts]
-test-ux = "usersim run"
-```
-
-**GitHub Actions:**
-```yaml
-- run: pip install usersim
-- run: usersim run --out results.json
-- uses: actions/upload-artifact@v4
-  with: { name: usersim-report, path: report.html }
-```
-
-Exit code is 0 when all users are satisfied across all scenarios, 1 otherwise.
-
----
-
-## Key concepts
-
-### Instrumentation (Layer 1)
-
-Runs in your application's language. The only contract: write a JSON object to stdout:
+Run your app. Write numbers to stdout. One JSON object:
 
 ```json
 {
   "schema":   "usersim.metrics.v1",
   "scenario": "peak_load",
-  "metrics":  { "response_ms": 480, "error_rate": 0.05 }
+  "metrics":  {
+    "response_ms":   480,
+    "error_count":   12,
+    "total_requests": 1000,
+    "result_count":  847,
+    "wall_ms":       3200
+  }
 }
 ```
 
-`USERSIM_SCENARIO` is available in the environment so one script can serve all scenarios:
+Use `USERSIM_SCENARIO` to vary what you measure:
 
 ```python
 scenario = os.environ.get("USERSIM_SCENARIO", "default")
-metrics  = measure_for_scenario(scenario)
 ```
 
-### Perceptions (Layer 2)
+**Rules:**
+- Measure everything you can. More variables = more constraint surface.
+- Don't compute derived values here if the raw numbers are available.
+- Don't make judgements. Numbers only.
 
-A domain expert translates raw metrics into observable quantities. **Mostly numeric** — pass values through, compute rates and ratios. Avoid encoding thresholds here: different users have different tolerances, and those live in user constraint files.
+---
+
+## Layer 2: Perceptions
+
+Rename metrics into stable variable names that Z3 constraints will reference.
+Pass numbers through. Compute only what can't be expressed as a Z3 constraint.
 
 ```python
-from usersim.perceptions.library import rate, throughput, run_perceptions
-
 def compute(metrics: dict, **_) -> dict:
     return {
-        # Numeric — pass through or derive; users apply their own thresholds
-        "response_ms":  metrics["response_ms"],
-        "error_rate":   metrics["error_count"] / max(metrics["total_requests"], 1),
-        "throughput":   throughput(metrics, "requests", "duration_ms"),
-
-        # Definitional boolean — categorical, not a threshold judgement
-        "returned_results": metrics.get("result_count", 0) > 0,
+        "response_ms":    metrics.get("response_ms", 0.0),
+        "error_count":    metrics.get("error_count", 0.0),
+        "total_requests": metrics.get("total_requests", 0.0),
+        "result_count":   metrics.get("result_count", 0.0),
+        "wall_ms":        metrics.get("wall_ms", 0.0),
     }
-
-if __name__ == "__main__":
-    run_perceptions(compute)  # reads stdin, writes perceptions JSON to stdout
 ```
 
-### Users (Layer 3)
+**Rules:**
+- Pass raw numbers through. Let Z3 compute ratios and relationships.
+- Booleans are fine for *definitional* facts: "did the process exit?",
+  "does the file exist?". Not for threshold judgements.
+- If you're writing `if x > threshold: return True` — stop. That's a Z3 constraint.
+- If you're computing a ratio that different users will threshold differently — stop.
+  Pass the numerator and denominator separately. Let each persona do the division in Z3.
 
-Each user applies their own thresholds to the numeric perceptions via Z3 constraints. Plain Python comparison operators work — no special imports needed for simple cases:
+---
+
+## Layer 3: Judgement (Z3)
+
+This is where the work happens. Each persona expresses its requirements as Z3
+constraints over the perception variables. Z3 evaluates all of them and reports
+which constraints passed, which failed, and for `Implies`, whether the antecedent fired.
 
 ```python
 from usersim import Person
-from usersim.judgement.z3_compat import Implies
+from usersim.judgement.z3_compat import Implies, And, Not
 
 class PowerUser(Person):
     name = "power_user"
 
     def constraints(self, P):
         return [
-            P.response_ms  <= 100,   # power user wants sub-100ms
-            P.error_rate   <= 0.001,
-            P.returned_results,
-        ]
+            # Threshold
+            P.response_ms <= 100,
 
-class CasualUser(Person):
-    name = "casual_user"
+            # Conditional: if cache was warm, response must be fast
+            Implies(P.cache_hit_rate >= 0.8, P.response_ms <= 50),
 
-    def constraints(self, P):
-        return [
-            P.response_ms  <= 3_000,  # barely notices a 3s wait
-            P.error_rate   <= 0.05,
+            # Arithmetic invariant: error rate as cross-multiplication
+            # (avoids computing error_rate in perceptions)
+            P.error_count * 1000 <= P.total_requests * 1,  # < 0.1%
+
+            # Structural invariant: can't succeed with zero results
+            Not(And(P.exit_code == 0, P.result_count == 0)),
+
+            # Matrix invariant: total = persons × scenarios
+            P.results_total == P.person_count * P.scenario_count,
+
+            # Timing budget scales with work done
+            P.wall_ms <= P.result_count * 10,
         ]
 ```
 
-The same perceptions, different thresholds. That's the point.
+**The goal:** push as much logic as possible into constraints. Every constraint
+you add is free coverage — zero additional scenario runs. Z3 evaluates all of them
+in milliseconds regardless of how many you define.
 
-| Expression | Meaning |
+### What Z3 can express
+
+| Pattern | Example |
 |---|---|
-| `P.value <= 200` | numeric threshold |
-| `P.value >= 0.8` | numeric lower bound |
-| `P.flag` | boolean fact must be true |
-| `Not(P.flag)` | boolean fact must be false |
-| `Implies(P.a, P.b)` | if a then b |
-| `And(P.a, P.b)` | both must hold |
+| Threshold | `P.response_ms <= 200` |
+| Conditional | `Implies(P.cache_warm, P.response_ms <= 50)` |
+| Compound conditional | `Implies(And(P.load_high, P.cache_cold), P.response_ms <= 2000)` |
+| Negation | `Not(P.error_flag)` |
+| Invariant violation | `Not(And(P.exit_code == 0, P.result_count == 0))` |
+| Cross-variable arithmetic | `P.error_count * 100 <= P.total_requests * 5` |
+| Matrix invariant | `P.results_total == P.person_count * P.scenario_count` |
+| Scaling budget | `P.wall_ms <= P.result_count * max_ms_per_result` |
+| Consistency | `P.satisfied_count <= P.total_count` |
+| Majority quality | `(P.has_doctype + P.is_self_contained + P.has_content) >= 2` |
+
+### What belongs in perceptions vs Z3
+
+| In perceptions | In Z3 |
+|---|---|
+| Rename `raw_response_time` → `response_ms` | `P.response_ms <= 200` |
+| Parse a nested JSON value | `P.error_count * 100 <= P.total * 1` |
+| Compute a rolling percentile from a time series | `P.p99_ms <= 500` |
+| Detect whether a file exists | `Implies(P.file_exists, P.file_size_bytes >= 1000)` |
+| Extract a status code from an HTTP response | `P.status_code == 200` |
+
+If you can write it as a Z3 expression, it belongs in Z3.
 
 ---
 
@@ -238,7 +257,7 @@ The same perceptions, different thresholds. That's the point.
 usersim init [DIR]               # scaffold a new project
 usersim run                      # run the full pipeline (reads usersim.yaml)
 usersim run --scenario peak_load # run one specific scenario
-usersim run --out results.json   # save results to file (also stdout)
+usersim run --out results.json   # save results to file
 usersim run --quiet              # suppress human summary on stderr
 usersim run --verbose            # print stage info to stderr
 
@@ -252,11 +271,32 @@ usersim run | usersim report                # pipe results into report
 usersim report --results results.json       # from a file
 ```
 
+Exit code is 0 when all personas are satisfied across all scenarios, 1 otherwise.
+
+---
+
+## CI integration
+
+```yaml
+# GitHub Actions
+- run: pip install usersim
+- run: usersim run --out results.json
+- uses: actions/upload-artifact@v4
+  with: { name: usersim-report, path: report.html }
+```
+
+```makefile
+# Makefile
+test-ux:
+    usersim run
+```
+
 ---
 
 ## Example
 
-[`examples/data-processor/`](examples/data-processor/) is a complete working example. It tests a simple in-memory data processor (sort, search, summarise) across three dataset sizes with three user personas (developer, analyst, ops engineer). All measurements are real — instrumentation runs the actual code and records wall-clock timing.
+[`examples/data-processor/`](examples/data-processor/) tests an in-memory data
+processor across three dataset sizes with three personas. All measurements are real.
 
 ```bash
 cd examples/data-processor
@@ -267,7 +307,9 @@ usersim run
 
 ## Z3 on ARM64
 
-`z3-solver` isn't packaged for all ARM64 Python versions (Apple Silicon, Raspberry Pi). usersim ships a pure-Python fallback that handles all constraint patterns above. Install `usersim[z3]` when possible; the fallback activates automatically otherwise.
+`z3-solver` isn't packaged for all ARM64 Python versions. usersim ships a
+pure-Python fallback. Install `usersim[z3]` when possible; the fallback activates
+automatically otherwise.
 
 ---
 
