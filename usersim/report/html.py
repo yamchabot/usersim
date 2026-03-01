@@ -639,27 +639,27 @@ def generate_report(results: dict, output_path: str | Path) -> None:
   --mono:       'SF Mono', 'Consolas', 'Menlo', monospace;
 }}
 body.earth {{
-  /* backgrounds: dark bud green — nearly black */
-  --bg:         #0c1508;
-  --card:       #131f0d;
-  --card2:      #1c2e14;
-  --border:     #2e4a1e;
-  /* text: trichome crystal — pale yellow-white */
-  --text:       #d8f0b0;
-  --fg:         #d8f0b0;
-  --muted:      #6a8a50;
-  /* semantic: vivid bud palette */
-  --pass:       #6dd633;   /* neon bud green        */
-  --fail:       #c87028;   /* orange pistil / hair  */
-  --blue:       #b878e8;   /* purple trichome       */
-  --orange:     #e09040;   /* amber resin           */
+  /* backgrounds: dense dark bud — deep olive-black to earthy brown-green */
+  --bg:         #0e130a;
+  --card:       #181e10;
+  --card2:      #232b17;
+  --border:     #3d5228;
+  /* text: milky trichome — off-white with slight warmth */
+  --text:       #e8ead8;
+  --fg:         #e8ead8;
+  --muted:      #7a8f62;
+  /* semantic: real bud palette */
+  --pass:       #8aba52;   /* muted sage-lime bud green (not neon) */
+  --fail:       #c46830;   /* rust-orange pistil hair              */
+  --blue:       #8878a8;   /* desaturated grey-purple trichome     */
+  --orange:     #b87c3a;   /* warm brown-amber stem / resin        */
   /* rgb variants */
-  --pass-rgb:   109,214,51;
-  --fail-rgb:   200,112,40;
-  --orange-rgb: 224,144,64;
-  --accent-rgb: 80,160,40;   /* deep green heatmap cells */
+  --pass-rgb:   138,186,82;
+  --fail-rgb:   196,104,48;
+  --orange-rgb: 184,124,58;
+  --accent-rgb: 90,130,45;   /* earthy olive heatmap cells */
   --sink:       rgba(0,0,0,0.5);
-  --hover-bg:   rgba(100,200,50,0.06);
+  --hover-bg:   rgba(138,186,82,0.06);
 }}
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
 body {{
