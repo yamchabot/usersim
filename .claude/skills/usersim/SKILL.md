@@ -1,243 +1,74 @@
-# Setting Up Usersim for a New Project
+# usersim — Setting Up a New Project
 
-> Agent instructions. You are configuring usersim for a project that has a working prototype
-> but no usersim defined anywhere. Follow these steps in order. Each step produces artifacts
-> that the next step depends on.
-
----
-
-## The Method
-
-**Plan in markdown first. Write code second.**
-
-The value of usersim comes from thinking carefully about who uses this application and what
-they actually need — before touching any code. The planning documents are the deliverables.
-Once you have good markdown, the code is transcription.
-
-Do not skip phases or combine them. Each phase depends on the output of the previous one.
-If a later phase feels hard, it usually means an earlier phase was incomplete.
+> Agent instructions for configuring usersim on any project from scratch.
+> Read this entire document before touching any file.
 
 ---
 
-## The Pipeline
+## What usersim is
 
-usersim has three layers. Each has a strict job and must not do the job of another.
+usersim is a **coverage engine**. It answers: for every type of person who uses this system,
+across every scenario it can be in, do the things that person cares about hold true?
 
-**Instrumentation** is the witness. It connects to the application — through whatever
-interface the application exposes — and records what happened. Raw counts, timings, state
-snapshots, emitted events. No interpretation. A witness who draws conclusions is out of
-order; instrumentation that computes answers has overstepped.
+The combinatorial power is Z3. A constraint like `wall_ms <= person_count * scenario_count * 3000`
+isn't one test — it's a bounded domain of satisfiability covering every combination of those
+variables within their observed ranges. 15 personas × 6 scenarios × ~50 constraints × avg 3
+variables per constraint ≈ 86,000 effective test assertions from a single run.
 
-**Perceptions** is the analyst. It reads the raw witness record and compresses it into
-meaningful signals: aggregations, ratios, derived quantities that no single measurement
-expresses alone. The analyst explains what the evidence means — still without rendering
-a verdict. A perception that returns a boolean has made a decision it shouldn't make.
-
-**Judgement** is the ruling. Z3 evaluates each user's constraints against the perceptions.
-Given what the analyst reported, was this person's standard met? Every boolean claim —
-"this was too slow", "this should never happen", "if X then Y must hold" — lives here and
-only here. This is where the constraint solver earns its place.
-
-The discipline: **stay in your lane.** Raw data belongs in instrumentation. Computation
-belongs in perceptions. Decisions belong in Z3.
+This is the point. Not test count. **Coverage of relationships.**
 
 ---
 
-## Before You Start
+## The pipeline
 
-Explore the prototype. Read every source file. Understand what it does, what it stores,
-how it behaves when things go wrong, and what kind of person would actually use it. You
-cannot write good user constraints without knowing the application.
+Three layers. Each has a strict job. A layer that does another layer's job produces results
+that are harder to inspect, harder to debug, and harder to trust.
 
-**Do not skip this.** Everything downstream depends on it.
-
----
-
-## Phase 1 — Users
-
-### Step 1: Identify user types
-
-Brainstorm 10–15 types of people who would want this application. Think about:
-- What problem does this app solve, and who has that problem most acutely?
-- What contexts would someone be in when they reach for this kind of tool?
-- Who would care most if it broke, leaked data, ran slowly, or was confusing?
-- Who would choose this over alternatives, and why?
-
-Write each as a short label and a one-sentence personal goal statement. Example:
-> **The Privacy-First User** — *"Use a notes app that never transmits data externally."*
-
-Do not write about the app's features. Write about the person's situation.
-
-### Step 2: Select 5 representative personas
-
-Choose 5 whose perspectives are meaningfully different from each other. Diversity matters —
-if two personas would write identical constraints, they are not both needed.
-
-### Step 3: Write 7 User Benefits per persona
-
-For each persona, write 7 statements in their voice describing what they get out of the app.
-These are not features. They are outcomes. Examples of the difference:
-
-- ❌ Feature: *"The app auto-saves."*
-- ✅ Benefit: *"I switch away from the tab and trust that what I wrote is still there."*
-
-Format: first person, present tense, concrete situation.
-
-### Step 4: Expand each benefit into how the app delivers it
-
-For each of the 7 benefits, write a paragraph describing which specific behaviour of this
-specific application produces that outcome. Ground it in the app — not in vague UX principles.
-
-**Artifact:** `user_simulation/docs/USER_PERSONAS.md` (overview) and
-`user_simulation/docs/personas/<name>.md` (one file per persona with all 7 benefits expanded).
-
----
-
-## Phase 2 — Metrics
-
-### Step 5: Derive measurable quantities from the benefit descriptions
-
-Read the persona files and ask: *what would you actually observe to confirm this benefit is
-being delivered?* Produce a flat list of things that can be measured by instrumentation.
-
-**Rules:**
-- Every metric is a count (`_count`) or a measurement (`_ms`, `_days`, `_bytes`, `_ratio`)
-- No booleans. A boolean is an answer. Metrics report evidence; judgements give answers.
-- Convert every boolean you think of into a count of failures or occurrences.
-  - `auth_required: false` → `auth_prompt_count` (constraint will be `== 0`)
-  - `data_survived: true` → `reload_loss_count` (constraint will be `== 0`)
-
-**Artifact:** `user_simulation/docs/METRICS.md` — table of metric names, types, descriptions,
-and which persona benefit motivated each one.
-
----
-
-## Phase 3 — Perceptions
-
-### Step 6: Name the perceptions as verb phrases
-
-Perceptions are the analyst layer — they read the raw witness record and extract meaningful
-signals. Name each one as a verb phrase describing what the function does:
-
-- **detecting** — looks for presence or count of something (`detecting outbound activity`)
-- **measuring** — quantifies something experienced directly (`measuring write latency`)
-- **inferring** — composite derived from multiple metrics (`inferring trust posture`)
-
-The naming matters: it keeps perceptions honest about their role. An `inferring` perception
-is explicitly a derived signal, not a raw observation. A `detecting` perception is explicitly
-counting evidence, not deciding whether that evidence is acceptable.
-
-Do not put threshold comparisons in perceptions. Those belong in Z3 constraints.
-
-### Step 7: Map each perception to its input metrics
-
-Make a table: perception → which metrics it reads. Some metrics will feed multiple
-perceptions. Some perceptions will be pass-through (one metric in, same value out).
-That is fine — the naming and grouping still carries meaning.
-
-**Artifact:** `user_simulation/docs/PERCEPTION_PLAN.md`
-
-### Step 8: Update each persona doc with its relevant perceptions
-
-Add a table to each persona file listing which perceptions that persona cares about and what
-constraint value they would expect (e.g. `== 0`, `<= 2`, `>= 1.0`). This is the bridge
-between the planning documents and the code you will write next.
-
----
-
-## Phase 4 — Instrumentation
-
-> **Web project?** If the application runs in a browser, read `.claude/skills/web.md`
-> before implementing this phase. It provides a ready-made scenario runner and page
-> automation API so you don't have to write that boilerplate yourself.
-
-### Step 9: Plan the scenarios
-
-For each perception, describe what the instrumentation would actually do to collect its
-input metrics. Think in terms of:
-- What actions to perform (navigate, click, type, reload, simulate offline)
-- What to observe (DOM state, storage reads, request counts, timing)
-- What needs to be captured before or alongside application code
-- Which metrics need their own isolated scenario vs. which can share one
-
-Group related metrics into named scenarios. Watch for dependencies: some metrics require
-a fresh state, some require seeded data, and some (like offline simulation) must be isolated
-because they alter the environment.
-
-**Artifact:** `user_simulation/docs/INSTRUMENTATION_PLAN.md` — one section per scenario,
-listing which metrics it collects and what actions it performs.
-
-### Step 10: Implement the instrumentation
-
-Instrumentation connects to the application through whatever interface it exposes. The
-interface depends entirely on what the application is:
-
-- **Browser app** — DOM queries, network interception, storage reads, timing APIs
-- **React or stateful frontend** — the app developer registers data with usersim via hooks
-  (see embedded hooks below), because internal component state is not queryable from outside
-- **Canvas or SVG rendering** — intercept the data going *into* the renderer, not the pixels
-  coming out; hook the draw calls or the data structures feeding them
-- **REST API or backend service** — an HTTP client making scripted requests, recording
-  response bodies, status codes, and latency
-- **Microcontroller or embedded device** — read from serial/UART, parse protocol frames,
-  record sensor values
-- **Kubernetes or distributed system** — query the metrics API, watch events, record
-  pod counts and error rates
-- **Bluetooth or radio protocol** — intercept the packet stream, log connection events
-  and payload content
-
-In all cases, instrumentation is a witness: it records what it observed without
-summarising, filtering, or deciding what matters. If you are not sure whether a data
-point is relevant, include it — the perceptions layer will decide.
-
-**Embedded hooks**
-
-When the application's internal state is not observable from outside — component trees,
-in-memory data structures, renderer inputs — the application developer adds small
-registration points that emit data to usersim:
-
-```js
-// In the application code:
-window.__usersim?.emit('habit_saved', { id, streak });
-window.__usersim?.register('habit_count', () => store.habits.length);
+```
+instrumentation  →  perceptions  →  Z3 judgement
+  (witness)          (analyst)        (ruling)
 ```
 
-The instrumentation layer reads these emitted events and registered values. This keeps
-the hooks in the application thin (one line per data point) while letting instrumentation
-collect them without modifying application behaviour in any other way.
+### Layer 1 — Instrumentation: the witness
 
-**Scenario runner**
+Runs the system. Records everything it observes. Outputs a flat JSON dict per scenario.
 
-The scenario runner loads the application, connects monitoring, performs the actions
-described in the plan, collects the recorded values, and writes a metrics document
-to stdout:
+**Contract:** no arithmetic, no thresholds, no interpretation. A witness who draws conclusions
+is a bad witness. If you find yourself writing `"passed": true`, stop — that's a judgement.
 
+**What goes here:** exit codes, timing in ms, file counts, byte counts, parse results, booleans
+for observable binary facts (file exists? yes/no — not a threshold).
+
+**Output format:**
 ```json
-{
-  "schema":   "usersim.metrics.v1",
-  "scenario": "<name>",
-  "metrics":  { "<metric_name>": <number> }
-}
+{"schema": "usersim.metrics.v1", "scenario": "full_integration",
+ "metrics": {"exit_code": 0, "wall_ms": 4230, "file_count": 4}}
 ```
 
-The scenario name comes from a command-line argument or environment variable
-(`USERSIM_SCENARIO`). One runner file should support all scenarios via a branch or
-dispatch table — not separate files per scenario.
+**`full_integration` is not optional.** Add a scenario that runs all subsystems in one pass.
+This ensures every antecedent fires with real values — no vacuous coverage.
 
-**Test each scenario independently before moving on:**
+### Layer 2 — Perceptions: the analyst
+
+Reads raw instrumentation output. Produces a flat dict of named numeric signals.
+
+**Contract:** rename, reshape, and compute things that are genuinely awkward in Z3. That's it.
+No thresholds. No booleans that encode decisions. No precomputed ratios unless Z3 truly can't
+do the arithmetic.
+
+**The canonical anti-pattern:**
+```python
+# WRONG — this is a Z3 constraint disguised as a perception
+"results_score": satisfied / max(total, 1)
+
+# RIGHT — pass both values; let Z3 do the arithmetic
+"results_satisfied": satisfied,
+"results_total":     total,
+# Z3 constraint: P.results_satisfied == P.results_total
 ```
-<runner command> baseline
-<runner command> persistence
-...
-```
 
-Each should print valid JSON with no errors before you proceed.
-
----
-
-## Phase 5 — Perceptions Code
-
-### Step 11: Write `user_simulation/perceptions.py`
+**What's allowed:** pass-throughs, sums of related counts, arithmetic Z3 can't easily express.
+**What's not allowed:** booleans encoding thresholds, precomputed ratios, varying return types.
 
 ```python
 def compute(metrics, scenario=None, person=None):
@@ -246,154 +77,309 @@ def compute(metrics, scenario=None, person=None):
         return float(v) if v is not None else default
 
     return {
-        # Pass-through: relay single metrics directly
-        "detecting_outbound_requests": get("fetch_call_count") + get("xhr_call_count"),
-
-        # Combining: produce values that no single metric expresses alone
-        "inferring_data_integrity": (
-            get("notes_after_reload", 1.0) / max(get("notes_before_reload", 1.0), 1.0)
-        ),
-
-        # ... one entry per perception from PERCEPTION_PLAN.md
+        "pipeline_exit_code":      get("exit_code"),
+        "pipeline_wall_clock_ms":  get("wall_ms"),
+        "results_satisfied":       get("satisfied_count"),
+        "results_total":           get("total_count"),
+        # ...
     }
 ```
 
-**Rules:**
-- Return `1.0` (not `0.0`) for ratio perceptions when neither input metric was measured in
-  the current scenario. A missing measurement is not evidence of failure.
-- Every key in the returned dict must appear in `PERCEPTION_PLAN.md`. No extras, no missing.
-- The function signature must accept `scenario` and `person` as keyword arguments even if
-  unused — the runner passes them.
+Return `1.0` (not `0.0`) for ratio perceptions when neither input was measured in the current
+scenario. A missing measurement is not evidence of failure.
+
+### Layer 3 — Z3 judgement: the ruling
+
+Every boolean claim lives here. Exclusively.
+
+**Multi-variable constraints are the goal**, not single-variable threshold checks:
+
+| Variables | Example | Value |
+|-----------|---------|-------|
+| 1 | `P.exit_code == 0` | floor |
+| 2 | `P.wall_ms <= P.results_total * 3000` | good |
+| 3 | `P.wall_ms <= P.person_count * P.scenario_count * 3000` | better |
+| 4+ | `P.report_bytes >= P.results_total * P.person_count * 80` | excellent |
+
+Multi-variable constraints test *relationships*. Changing any input automatically re-evaluates
+the constraint with the new combination.
+
+**Always use `named()`:**
+```python
+from usersim.judgement.z3_compat import Implies, And, Not, named
+
+named("pipeline/exit-0-implies-valid-json",
+      Implies(P.pipeline_exit_code == 0, P.output_is_valid_json))
+```
+
+Naming convention: `group/check-name`. The group appears in the report's Group × Scenario matrix.
+Unnamed constraints are invisible in the report.
+
+**Vacuous antecedents are wasted coverage.** After every run, check:
+```bash
+python3 -c "
+import json
+with open('results.json') as f: r = json.load(f)
+vac = [(res['person'],res['scenario'],c['label'])
+       for res in r['results']
+       for c in res.get('constraints',[])
+       if c.get('antecedent_fired') is False]
+print(f'{len(vac)} vacuous'); [print(f'  {p}/{s}: {l}') for p,s,l in vac[:20]]
+"
+```
+If a constraint's antecedent never fires, add a scenario that exercises it.
 
 ---
 
-## Phase 6 — User Constraint Files
+## Personas
 
-### Step 12: Write one Python file per persona in `user_simulation/users/`
+### Each persona must earn its place
+
+A persona is useful only if it brings constraints that no other persona has. Before writing a
+new persona, ask: *what would this person check that the existing personas don't?*
+
+If two personas produce identical Z3 constraints, they're the same persona. Rename or delete.
+
+### Diversity coverage
+
+At minimum, cover these perspectives:
+
+| Concern | Example persona | What they add |
+|---------|----------------|---------------|
+| Operational | SRE, DevOps | Timing SLOs, exit-code contracts, artifact production |
+| Correctness | QA, Researcher | Coverage completeness, soundness, schema stability |
+| Safety | Security, Compliance | Denial paths, no stdout leakage, audit trail |
+| Experience | DevEx, TechWriter | Onboarding, self-contained output, readable errors |
+| Outcome | PM, ML Engineer | Story satisfaction, behavioral contracts, pass rates |
+| Extension | OSS Contributor | Non-regression, YAML parseability, extension surface |
+
+### Persona template
 
 ```python
 from usersim import Person
+from usersim.judgement.z3_compat import Implies, And, Not, named
+from constraint_library import pipeline_invariants, timing_invariants
 
-class StreakChaser(Person):
-    name    = "streak_chaser"
-    role    = "Daily habit tracker"
-    goal    = "Never break a streak"
+class MyPersona(Person):
+    name    = "my_persona"
+    role    = "Short role description"
+    goal    = "one sentence: what this person needs the system to do"
     pronoun = "they"
 
     def constraints(self, P):
         return [
-            P.measuring_persistence_fidelity >= 1.0,
-            P.detecting_duplicate_prevention == 0,
+            *pipeline_invariants(P),
+            *timing_invariants(P, max_ms_per_result=2000),
+            named("my-persona/specific-check",
+                  Implies(P.something >= 1, P.other_thing == 0)),
         ]
 ```
 
-`P` is a namespace — access any perception by its exact key name as an attribute.
-`P.some_perception` returns a Z3 expression. Use standard comparison operators.
+---
 
-For conditional constraints:
+## The constraint library
+
+Don't copy constraints across persona files. Extract shared groups into a library.
+
 ```python
-from usersim.judgement.z3_compat import Implies
+# constraint_library.py
+def pipeline_invariants(P):
+    """Exit code → output coherence invariants."""
+    return [
+        named("pipeline/exit-0-implies-valid-json",
+              Implies(P.pipeline_exit_code == 0, P.output_is_valid_json)),
+        named("pipeline/valid-json-implies-satisfied-lte-total",
+              Implies(P.output_is_valid_json,
+                      P.results_satisfied <= P.results_total)),
+    ]
 
-Implies(P.habit_count >= 10, P.measuring_render_time <= 200)
-# "If there are 10+ habits, render time must be under 200ms"
+def timing_invariants(P, max_ms_per_result=3000, max_total_ms=60000):
+    """Wall clock budget, parameterized by tolerance."""
+    return [
+        named("timing/budget-scales-with-result-count",
+              Implies(P.pipeline_wall_clock_ms > 0,
+                      P.pipeline_wall_clock_ms <= P.results_total * max_ms_per_result)),
+        named("timing/hard-ceiling",
+              Implies(P.pipeline_wall_clock_ms > 0,
+                      P.pipeline_wall_clock_ms <= max_total_ms)),
+    ]
 ```
 
-**Calibration:** run a scenario first and read the actual perception values before setting
-thresholds. A constraint that always passes or always fails is not providing signal.
-
-**Diversity check:** if two personas have nearly identical constraint sets, one of them is
-not doing useful work. Return to Phase 1 and reconsider.
+Parameterize groups when personas have different tolerances. `timing_invariants(P, max_ms_per_result=2000)`
+gives SRE tighter constraints than `timing_invariants(P, max_ms_per_result=10000)` for ML Engineer.
 
 ---
 
-## Phase 7 — Configuration and First Run
+## Scenarios
 
-### Step 13: Write `usersim.yaml` at the project root
+Scenarios are *contexts*, not test cases. Each one puts the system in a specific situation.
 
+**Required scenarios:**
+- A normal success case (system works, all subsystems run)
+- An error/failure case (broken config, bad input — verify clean failure)
+- `full_integration` — runs all subsystems in sequence — ensures all antecedents fire
+
+**Signs of a bad scenario:**
+- Two scenarios with identical perceptions → merge them
+- Many constraints fire vacuously → scenario isn't exercising the system
+
+**Signs of a good scenario:**
+- Zero or near-zero `antecedent_fired: false` on a full run
+- Perceptions differ meaningfully across scenarios
+- Some constraints pass in this scenario that would fail if the system were broken
+
+**usersim.yaml:**
 ```yaml
 version: 1
 
-instrumentation: <command to run the scenario runner>
-
-perceptions: user_simulation/perceptions.py
+instrumentation: "python3 instrumentation.py"
+perceptions: perceptions.py
 
 users:
-  - user_simulation/users/*.py
+  - users/*.py
 
 scenarios:
-  - baseline
-  - persistence
-  - ...
+  - name: normal_run
+    description: "Full pipeline on example input — verifies end-to-end output"
+  - name: bad_config
+    description: "Broken config — verify clean non-zero exit"
+  - name: full_integration
+    description: "All subsystems in one pass — no vacuous antecedents"
 
 output:
-  results: user_simulation/results.json
-  report:  user_simulation/report.html
+  results: results.json
+  report:  report.html
 ```
-
-The instrumentation command runs from the directory containing `usersim.yaml`.
-`USERSIM_SCENARIO` is injected automatically by the runner for each scenario.
-
-### Step 14: Run and verify
-
-```
-usersim run
-```
-
-All checks should pass before committing. If any fail:
-1. Check whether the threshold is wrong — run a scenario manually and read the raw values
-2. Check whether the perception is computing correctly — print intermediate values
-3. Check whether the instrumentation is actually measuring the intended thing (not returning
-   a default zero because the hook never fired)
 
 ---
 
-## File Structure Reference
+## Instrumentation implementation
+
+```python
+# instrumentation.py
+import sys, os, subprocess, json, time
+
+SCENARIO = os.environ.get("USERSIM_SCENARIO", "normal_run")
+
+def run_scenario(name):
+    if name == "normal_run":
+        return run_normal()
+    elif name == "bad_config":
+        return run_bad_config()
+    elif name == "full_integration":
+        return run_full_integration()
+    else:
+        raise ValueError(f"Unknown scenario: {name}")
+
+def emit(scenario, metrics):
+    print(json.dumps({"schema": "usersim.metrics.v1",
+                      "scenario": scenario, "metrics": metrics}))
+
+if __name__ == "__main__":
+    emit(SCENARIO, run_scenario(SCENARIO))
+```
+
+Each scenario function returns a flat dict of raw measurements. Keep each scenario function
+independent — don't share state between them.
+
+---
+
+## The effective test count
 
 ```
-my-app/
-  src/                                    ← the application
-  user_simulation/
-    docs/
-      USER_PERSONAS.md                    ← persona overview
-      METRICS.md                          ← all measurable quantities
-      PERCEPTION_PLAN.md                  ← metric → perception mapping
-      INSTRUMENTATION_PLAN.md             ← scenarios and what they collect
-      personas/
-        <persona-name>.md                 ← one per persona
-    instrumentation/
-      <runner files>                      ← scenario runner + monitoring hooks
+effective_tests = sum(4^k  for each constraint, k = distinct Z3 variables)
+```
+
+4 is a conservative domain size (covers: 0, 1, many, max). A constraint with 3 variables
+covers 64 combinations. A suite with 3,672 evaluations and avg 3 variables ≈ **86,000 effective tests**.
+
+The report header shows this number. It's the honest way to count coverage when using Z3.
+
+---
+
+## Running
+
+```bash
+# Full run
+usersim run --config usersim.yaml
+
+# Report only (from existing results)
+usersim report --results results.json --out report.html
+
+# Check effective test count
+python3 -c "import json; r=json.load(open('results.json')); print(r['summary'])"
+```
+
+All checks should pass before committing. If any fail:
+1. Print the raw perceptions for the failing scenario to verify the instrumentation is correct
+2. Check whether the threshold in the constraint is calibrated to actual values
+3. Check whether the antecedent was actually exercised in this scenario
+
+---
+
+## File structure
+
+```
+my-project/
+  src/                       ← the application
+  user_simulation/           ← (or wherever you put it)
     users/
-      <persona_name>.py                   ← one per persona
-    perceptions.py
-    results.json                          ← gitignore
-    report.html                           ← gitignore
+      persona_one.py
+      persona_two.py
+      ...
+    constraint_library.py    ← shared constraint groups
+    instrumentation.py       ← scenario runner
+    perceptions.py           ← signal computation
+    results.json             ← gitignore
+    report.html              ← gitignore
   usersim.yaml
 ```
 
 ---
 
+## Web/browser applications
+
+If the application runs in a browser, instrumentation works differently: DOM queries, network
+interception, storage reads, timing APIs.
+
+For internal state not visible from outside (React component state, canvas renderer inputs),
+the application registers hooks:
+```js
+window.__usersim?.emit('event_name', { ...data });
+window.__usersim?.register('metric_name', () => store.someValue);
+```
+
+Instrumentation reads these at collection time. Hooks should be one line per data point —
+do not put logic in them.
+
+---
+
 ## Principles
 
-- **People first, metrics second.** The constraint system should feel like a natural
-  expression of what a real person would care about — not a technical checklist.
+**Stay in your lane.** Instrumentation witnesses. Perceptions interprets. Z3 decides. A layer
+that does another's job produces results that are harder to inspect, harder to debug, and
+harder to trust.
 
-- **Stay in your lane.** Instrumentation witnesses. Perceptions interprets. Z3 decides.
-  A layer that does another layer's job produces results that are harder to inspect,
-  harder to debug, and harder to trust.
+**Thin perceptions, fat Z3.** If you can express it as a Z3 arithmetic relationship, do that
+instead of computing it in perceptions. `P.satisfied == P.total` is better than
+`perceptions["score"] = satisfied/total` + `P.score == 1.0`.
 
-- **Booleans belong in Z3.** If you find yourself writing a boolean metric or a boolean
-  perception, convert it to a count or ratio. The Z3 constraint `count == 0` is more
-  expressive, composable, and auditable than a flag that was set somewhere upstream.
+**Multi-variable constraints are the goal.** Single-variable threshold checks are the floor.
+The value of Z3 is relationships: `A <= B * C * K`. That single constraint covers the entire
+space of (A, B, C) combinations.
 
-- **Perceptions are verb phrases.** `detecting outbound activity`, `measuring write latency`,
-  `inferring trust posture`. The verb signals what kind of transformation it is and keeps
-  the analyst honest about what it is and isn't doing.
+**Name every constraint.** `named("group/check-name", expr)`. The name appears in the report
+matrix, in failure output, and in the Group × Scenario coverage graph.
 
-- **Test the instrumentation before writing the constraints.** You cannot set good
-  thresholds without seeing what the app actually produces.
+**Calibrate before you commit.** Run a scenario, read the raw perceptions, then set thresholds.
+A constraint that always passes or always fails provides zero signal.
 
-- **Diverse personas produce diverse constraints.** If two personas have identical
-  constraint sets, one of them is not pulling its weight.
+**`full_integration` is mandatory.** It's the only way to guarantee no constraint ever fires
+vacuously. A vacuous constraint is not a test — it's a confidence trap.
 
-- **The plan is the hard part.** If the markdown is right, the code will follow easily.
-  If the code is hard to write, the plan is probably incomplete.
+**People first, metrics second.** The constraint system should feel like a natural expression
+of what a real person would care about. If a constraint wouldn't make sense to the persona
+you're writing it for, delete it.
+
+**Diverse personas produce diverse constraints.** If two personas have nearly identical
+constraint sets, one of them is not doing useful work. Return to persona design.
