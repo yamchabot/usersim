@@ -64,24 +64,47 @@ def generate_report(results: dict, output_path: str | Path) -> None:
 
     # ── Collect never-exercised constraints across all personas ────────────────
     never_exercised: dict[str, list[str]] = {}
+
     for person_name in persons_ordered:
         person_results = [result_map.get((person_name, s)) for s in scenarios]
-        fired_counts: dict[str, int | None] = {}
+
+        # Determine constraint count from the first available result
+        n_constraints = 0
+        for r in person_results:
+            if r:
+                n_constraints = len(r.get("constraints", []))
+                break
+        if not n_constraints:
+            continue
+
+        # Track per constraint-index: did the antecedent ever fire?
+        # Also capture a representative label for display.
+        ever_fired = [False] * n_constraints
+        labels     = [""] * n_constraints
+
         for r in person_results:
             if not r:
                 continue
-            for c in r.get("constraints", []):
-                if not isinstance(c, dict):
+            for i, c in enumerate(r.get("constraints", [])):
+                if not isinstance(c, dict) or i >= n_constraints:
                     continue
-                lbl   = c["label"]
                 fired = c.get("antecedent_fired")
                 if fired is None:
+                    # Not an Implies — always exercised by definition
+                    ever_fired[i] = True
                     continue
-                if lbl not in fired_counts:
-                    fired_counts[lbl] = 0
                 if fired:
-                    fired_counts[lbl] += 1
-        unexercised = [lbl for lbl, cnt in fired_counts.items() if cnt == 0]
+                    ever_fired[i] = True
+                # Keep the most informative label (prefer the one where the
+                # antecedent fired so the display label is accurate)
+                if not labels[i] or fired:
+                    labels[i] = c.get("label", "")
+
+        unexercised = [
+            labels[i]
+            for i in range(n_constraints)
+            if not ever_fired[i] and labels[i]
+        ]
         if unexercised:
             never_exercised[person_name] = unexercised
 
