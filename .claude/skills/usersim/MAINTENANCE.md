@@ -23,23 +23,29 @@ that once asked hard questions now pass trivially. This skill is about keeping t
 ## The audit
 
 ```bash
+usersim audit
+```
+
+Run this after every maintenance cycle. It runs the test suite, then analyses the results.
+Detects all five health problems in one pass and exits 1 if vacuous constraints are found
+(safe to add to CI).
+
+To skip re-running tests and audit an existing results file:
+
+```bash
 usersim audit --results user_simulation/results.json
 ```
 
-Run this after every maintenance cycle. It detects all five health problems in one pass
-and exits 1 if vacuous constraints are found (safe to add to CI).
-
-To also detect dead perceptions (perceptions computed but never referenced by any constraint),
-pass the config so usersim can locate perceptions.py:
+Pass `--config` to enable dead perceptions detection (usersim needs to locate perceptions.py):
 
 ```bash
-usersim audit --results user_simulation/results.json --config usersim.yaml
+usersim audit --config usersim.yaml
 ```
 
 Output as JSON for scripting or historical tracking:
 
 ```bash
-usersim audit --results user_simulation/results.json --json
+usersim audit --json
 ```
 
 ---
@@ -196,7 +202,7 @@ from its persona-specific constraints.
 Append a record after each maintenance cycle:
 
 ```bash
-usersim audit --results user_simulation/results.json --json | python3 -c "
+usersim audit --json | python3 -c "
 import json, sys, datetime
 d = json.load(sys.stdin)['summary']
 print(f'| {datetime.date.today()} | {d[\"effective_tests\"]:>8} | {d[\"constraint_evals\"]:>6} | {d[\"satisfied\"]}/{d[\"total\"]} | {d[\"vacuous_count\"]} vacuous |')
