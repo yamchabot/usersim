@@ -153,7 +153,7 @@ def generate_report(results: dict, output_path: str | Path) -> None:
     else:
         gaps_html = ""
 
-    # ── Variable impact matrix helpers ────────────────────────────────────────
+    # ── Shared helpers (used by global matrices and per-persona matrices) ──────
     import re as _re
 
     _Z3_KEYWORDS = {
@@ -168,6 +168,138 @@ def generate_report(results: dict, output_path: str | Path) -> None:
             if m not in _Z3_KEYWORDS and len(m) > 2
         ]
 
+    # ── Global overview matrices (2×2 grid) ───────────────────────────────────
+    # Build three global summary matrices from all results.
+
+    # Helper: build a colored HTML table from a 2-D count dict
+    def _matrix_table(row_keys, col_keys,
+                      counts,           # {row → {col → int}}
+                      row_label="",
+                      col_label="",
+                      row_fmt=None,
+                      col_fmt=None) -> str:
+        row_fmt = row_fmt or (lambda x: x)
+        col_fmt = col_fmt or (lambda x: x)
+
+        if not row_keys or not col_keys:
+            return ""
+
+        # row totals for sorting
+        row_totals = {r: sum(counts.get(r, {}).values()) for r in row_keys}
+        sorted_rows = sorted(row_keys, key=lambda r: -row_totals[r])
+
+        max_cell = max(
+            (v for rc in counts.values() for v in rc.values()),
+            default=1
+        ) or 1
+
+        th_cols = "".join(
+            f'<th class="gm-head">{col_fmt(c).replace("_","<br>")}</th>'
+            for c in col_keys
+        )
+        header = (
+            f'<tr><th class="gm-rowhead">{row_label}</th>'
+            f'{th_cols}'
+            f'<th class="gm-total">Σ</th></tr>'
+        )
+
+        rows_html = ""
+        for r in sorted_rows:
+            rc = counts.get(r, {})
+            total_r = row_totals[r]
+            tds = ""
+            for c in col_keys:
+                cnt = rc.get(c, 0)
+                alpha = round(0.07 + (cnt / max_cell) * 0.73, 3) if cnt else 0
+                bg = f"rgba(56,139,253,{alpha})" if cnt else "transparent"
+                tds += (
+                    f'<td class="gm-cell" style="background:{bg}">'
+                    f'{"<b>" + str(cnt) + "</b>" if cnt else ""}'
+                    f'</td>'
+                )
+            t_alpha = round(0.1 + (total_r / (max_cell * len(col_keys))) * 0.6, 3)
+            rows_html += (
+                f'<tr>'
+                f'<td class="gm-rowhead">{_html_escape(row_fmt(r))}</td>'
+                f'{tds}'
+                f'<td class="gm-total" style="background:rgba(56,139,253,{t_alpha})">'
+                f'<b>{total_r}</b></td>'
+                f'</tr>\n'
+            )
+
+        return (
+            f'<div class="gm-scroll">'
+            f'<table class="gm-table">'
+            f'<thead>{header}</thead>'
+            f'<tbody>{rows_html}</tbody>'
+            f'</table></div>'
+        )
+
+    # Count active constraint references for each (variable, scenario, persona)
+    gm_var_sc:  dict[str, dict[str, int]] = {}   # variable × scenario
+    gm_var_pers: dict[str, dict[str, int]] = {}  # variable × persona
+    gm_pers_sc:  dict[str, dict[str, int]] = {}  # persona × scenario
+
+    for r in all_results:
+        persona  = r["person"]
+        scenario = r["scenario"]
+        for c in r.get("constraints", []):
+            if not isinstance(c, dict):
+                continue
+            if c.get("antecedent_fired") is False:
+                continue  # skip vacuous
+            expr = c.get("expr") or ""
+            for v in _extract_vars(expr):
+                gm_var_sc.setdefault(v, {})
+                gm_var_sc[v][scenario] = gm_var_sc[v].get(scenario, 0) + 1
+
+                gm_var_pers.setdefault(v, {})
+                gm_var_pers[v][persona] = gm_var_pers[v].get(persona, 0) + 1
+
+            # persona × scenario: count distinct active constraints (not per-var)
+            fired = c.get("antecedent_fired")
+            if fired is not False:
+                gm_pers_sc.setdefault(persona, {})
+                gm_pers_sc[persona][scenario] = gm_pers_sc[persona].get(scenario, 0) + 1
+
+    all_vars  = sorted(
+        {v for d in (gm_var_sc, gm_var_pers) for v in d},
+        key=lambda v: -(sum(gm_var_sc.get(v, {}).values()) +
+                        sum(gm_var_pers.get(v, {}).values()))
+    )
+
+    tbl_var_sc   = _matrix_table(all_vars, scenarios,       gm_var_sc,
+                                  row_label="variable", col_label="scenario")
+    tbl_var_pers = _matrix_table(all_vars, persons_ordered, gm_var_pers,
+                                  row_label="variable", col_label="persona")
+    tbl_pers_sc  = _matrix_table(persons_ordered, scenarios, gm_pers_sc,
+                                  row_label="persona", col_label="scenario")
+
+    global_matrices_html = f"""
+<div class="gm-section">
+  <div class="gm-title">📊 Global constraint coverage</div>
+  <div class="gm-grid">
+    <div class="gm-panel">
+      <div class="gm-panel-label">Variable × Scenario</div>
+      {tbl_var_sc}
+    </div>
+    <div class="gm-panel">
+      <div class="gm-panel-label">Variable × Persona</div>
+      {tbl_var_pers}
+    </div>
+    <div class="gm-panel">
+      <div class="gm-panel-label">Persona × Scenario</div>
+      {tbl_pers_sc}
+    </div>
+    <div class="gm-panel gm-panel-empty">
+      <div class="gm-panel-label">Coming soon</div>
+      <div class="gm-empty-hint">Constraint group coverage, dependency graph, or coverage gaps — to be determined.</div>
+    </div>
+  </div>
+</div>
+"""
+
+    # ── Variable impact matrix (per-persona) ──────────────────────────────────
     def _build_persona_matrix(person_name: str) -> str:
         """
         Build a variable × scenario impact matrix for one persona.
@@ -607,6 +739,60 @@ header h1 {{ font-size: 22px; font-weight: 600; margin-bottom: 6px; }}
 .c-expr   {{ font-size: 10px; opacity: 0.55; white-space: pre-wrap; word-break: break-all; }}
 .c-count  {{ margin-left: 8px; font-size: 10px; opacity: 0.55; white-space: nowrap; flex-shrink: 0; }}
 
+/* ── Global coverage matrices (2×2) ─────────────────────── */
+.gm-section {{
+  background: #0d1117; border: 1px solid var(--border);
+  border-radius: 10px; padding: 18px 22px; margin-bottom: 24px;
+}}
+.gm-title {{ font-weight: 700; color: var(--fg); margin-bottom: 14px; font-size: 14px; }}
+.gm-grid {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}}
+.gm-panel {{
+  background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+  border-radius: 7px; padding: 12px 14px; min-width: 0;
+}}
+.gm-panel-label {{
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px;
+}}
+.gm-panel-empty {{
+  display: flex; flex-direction: column; justify-content: center;
+  align-items: center; opacity: 0.35;
+}}
+.gm-empty-hint {{
+  font-size: 11px; color: var(--muted); text-align: center;
+  margin-top: 8px; line-height: 1.5; max-width: 200px;
+}}
+.gm-scroll {{ overflow-x: auto; }}
+.gm-table {{
+  border-collapse: collapse; font-family: var(--mono); font-size: 10px;
+  width: 100%;
+}}
+.gm-table thead tr {{ border-bottom: 1px solid var(--border); }}
+.gm-table th, .gm-table td {{ padding: 4px 8px; text-align: center; }}
+.gm-rowhead {{
+  text-align: left !important; color: var(--blue); font-weight: 600;
+  white-space: nowrap; font-size: 10px;
+  border-right: 1px solid var(--border);
+}}
+.gm-head {{
+  color: var(--muted); font-size: 9px; text-transform: uppercase;
+  letter-spacing: .04em; vertical-align: bottom; text-align: center;
+  padding: 4px 4px 6px !important; line-height: 1.4;
+}}
+.gm-cell {{
+  color: var(--fg); font-size: 10px; border-left: 1px solid #21262d;
+  min-width: 40px;
+}}
+.gm-total {{
+  font-weight: 700; color: var(--fg);
+  border-left: 1px solid var(--border); min-width: 30px;
+}}
+.gm-table tbody tr:hover {{ background: rgba(255,255,255,0.03); }}
+
 /* ── Variable impact matrix ──────────────────────────────── */
 .vim-primary {{ margin-bottom: 4px; }}
 .vim-wrap {{
@@ -769,6 +955,8 @@ details[open] .constraints-summary::before {{ transform: rotate(90deg); }}
 <div id="tooltip"></div>
 
 {gaps_html}
+
+{global_matrices_html}
 
 {cards_html}
 
